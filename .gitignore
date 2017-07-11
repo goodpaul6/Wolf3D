@@ -10,3 +10,4 @@ tags
 Debug/ 
 Release/ 
 *.log 
+*.trace 
