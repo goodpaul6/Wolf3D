@@ -1,0 +1,12 @@
+*.VC.opendb 
+Debug/* 
+Release/* 
+tags 
+.vs 
+*.db 
+*.swp 
+*Debug/* 
+*Release/* 
+Debug/ 
+Release/ 
+*.log 
