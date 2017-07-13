@@ -5,18 +5,6 @@
 #include "graphics.hpp"
 #include "resources.hpp"
 
-static const Vertex PLANE_VERTICES[] = 
-{
-    // Top-left
-    { -1, 1, 0, 0, 0 },
-    // Top-right
-    { 1, 1, 0, 1, 0 },
-    // Bottom-right
-    { 1, -1, 0, 1, 1 },
-    // Bottom-left
-    { -1, -1, 0, 0, 1 }
-};
-
 static const ushort PLANE_INDICES[] =
 {
     // Top-right triangle
@@ -27,6 +15,20 @@ static const ushort PLANE_INDICES[] =
 
 static const int TILE_WIDTH = 64;
 static const int TILE_HEIGHT = 64;
+
+void GetTileUV(const Texture& texture, int tile, float& u1, float& v1, float& u2, float& v2)
+{
+    int columns = texture.width / TILE_WIDTH;
+
+    float w = (float)TILE_WIDTH / texture.width;
+    float h = (float)TILE_HEIGHT / texture.height;
+
+    u1 = (float)((tile % columns) * TILE_WIDTH) / texture.width + w;
+    v1 = (float)((tile / columns) * TILE_HEIGHT) / texture.height + h;
+
+    u2 = u1 - w;
+    v2 = v1 - h;
+}
 
 Mesh CreateMesh(int vertexCount, const Vertex* vertices, int indexCount, const ushort* indices)
 {
@@ -61,9 +63,21 @@ Mesh CreateMesh(int vertexCount, const Vertex* vertices, int indexCount, const u
     return mesh;
 }
 
-Mesh CreatePlaneMesh()
+Mesh CreatePlaneMesh(float u1, float v1, float u2, float v2)
 {
-    return CreateMesh(COUNT_OF(PLANE_VERTICES), PLANE_VERTICES, 
+    const Vertex vertices[] =
+    {
+        // Top-left
+        { -1, 1, 0, u1, v1 },
+        // Top-right
+        { 1, 1, 0, u2, v1 },
+        // Bottom-right
+        { 1, -1, 0, u2, v2 },
+        // Bottom-left
+        { -1, -1, 0, u1, v2 }
+    };
+
+    return CreateMesh(COUNT_OF(vertices), vertices, 
                       COUNT_OF(PLANE_INDICES), PLANE_INDICES);
 }
 
@@ -75,13 +89,14 @@ Mesh CreateLevelMesh(const Level& level, const Texture& texture)
     int indexCount = 0;
 	ushort* indices = (ushort*)malloc(sizeof(ushort) * 36 * level.width * level.height);
 
-#define PUSH_FLOOR(x, z, u1, v1, u2, v2) do { \
+#define PUSH_FLOOR(x, y, z, u1, v1, u2, v2) do { \
     float xx = (float)(x) * 2; \
+    float yy = (float)(y) * 2; \
     float zz = (float)(z) * 2; \
-    vertices[vertexCount++] = { (float)xx, 0.0f, (float)zz, (float)(u1), (float)(v1) }; \
-    vertices[vertexCount++] = { (float)xx + 2, 0.0f, (float)zz, (float)(u2), (float)(v1) }; \
-    vertices[vertexCount++] = { (float)xx + 2, 0.0f, (float)zz + 2, (float)(u2), (float)(v2) }; \
-    vertices[vertexCount++] = { (float)xx, 0.0f, (float)zz + 2, (float)(u1), (float)(v2) }; \
+    vertices[vertexCount++] = { (float)xx, yy, (float)zz, (float)(u1), (float)(v1) }; \
+    vertices[vertexCount++] = { (float)xx + 2, yy, (float)zz, (float)(u2), (float)(v1) }; \
+    vertices[vertexCount++] = { (float)xx + 2, yy, (float)zz + 2, (float)(u2), (float)(v2) }; \
+    vertices[vertexCount++] = { (float)xx, yy, (float)zz + 2, (float)(u1), (float)(v2) }; \
 	ushort i = vertexCount - 4; \
     indices[indexCount++] = i; \
     indices[indexCount++] = i + 1; \
@@ -128,17 +143,9 @@ Mesh CreateLevelMesh(const Level& level, const Texture& texture)
         for(int x = 0; x < level.width; ++x)
         {
             int tile = level.tiles[x + z * level.width];
-
-            int columns = texture.width / TILE_WIDTH;
-
-			float w = (float)TILE_WIDTH / texture.width;
-			float h = (float)TILE_HEIGHT / texture.height;
-
-            float u1 = (float)((tile % columns) * TILE_WIDTH) / texture.width + w;
-            float v1 = (float)((tile / columns) * TILE_HEIGHT) / texture.height + h;
-        
-			float u2 = u1 - w;
-            float v2 = v1 - h;
+            
+            float u1, v1, u2, v2;
+            GetTileUV(texture, tile, u1, v1, u2, v2);
             
             if(tile > 0)
             {
@@ -148,7 +155,14 @@ Mesh CreateLevelMesh(const Level& level, const Texture& texture)
 				PUSH_WALL_Z(x, z + 1, u1, v1, u2, v2);
             }
             else
-                PUSH_FLOOR(x, z, u1, v1, u2, v2);
+            {
+                PUSH_FLOOR(x, 0, z, u1, v1, u2, v2);
+
+                // Recalculate uv's for ceiling tile
+                tile = 108;
+				GetTileUV(texture, tile, u1, v1, u2, v2);
+                PUSH_FLOOR(x, 1, z, u1, v1, u2, v2);
+            }
         }
     }
 
@@ -164,13 +178,6 @@ Mesh CreateLevelMesh(const Level& level, const Texture& texture)
     return mesh;
 }
 
-void Draw(const Mesh& mesh)
-{
-    glBindVertexArray(mesh.vertexArray);
-
-    glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_SHORT, (void*)0);
-}
-
 void DestroyMesh(Mesh& mesh)
 {
     glDeleteVertexArrays(1, &mesh.vertexArray);
@@ -179,3 +186,11 @@ void DestroyMesh(Mesh& mesh)
     free(mesh.vertices);
     free(mesh.indices);
 }
+
+void Draw(const Mesh& mesh)
+{
+    glBindVertexArray(mesh.vertexArray);
+
+    glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_SHORT, (void*)0);
+}
+

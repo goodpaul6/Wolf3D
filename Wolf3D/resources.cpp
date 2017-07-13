@@ -155,11 +155,43 @@ Level LoadLevel(const char* filename)
         }
     }
 
+    int typeCount;
+    fscanf(file, "%d", &typeCount);
+ 
+    char** types = (char**)malloc(sizeof(char*) * typeCount);
+
+    int* entityCount = (int*)malloc(sizeof(int) * typeCount);
+    EntityInfo** entities = (EntityInfo**)malloc(sizeof(EntityInfo*) * typeCount);
+
+    for(int i = 0; i < typeCount; ++i)
+    {
+        types[i] = (char*)malloc(ENTITY_TYPE_MAX_LENGTH + 1);
+        fscanf(file, "%32s", types[i]);
+        
+        int typeEntCount;
+        fscanf(file, "%d", &typeEntCount);
+        
+        entityCount[i] = typeEntCount;
+
+        EntityInfo* typeEnts = (EntityInfo*)malloc(sizeof(EntityInfo) * typeEntCount);
+
+        for(int j = 0; j < typeEntCount; ++j)
+            fscanf(file, "%f %f %f", &typeEnts[j].x, &typeEnts[j].y, &typeEnts[j].z);
+
+        entities[i] = typeEnts;
+    }
+
     Level level;
 
     level.tiles = tiles;
     level.width = w;
     level.height = h;
+
+    level.typeCount = typeCount;
+    level.types = types;
+
+    level.entityCount = entityCount;
+    level.entities = entities;
 
     return level;
 }
@@ -167,4 +199,14 @@ Level LoadLevel(const char* filename)
 void DestroyLevel(Level& level)
 {
     free(level.tiles);
+
+    for(int i = 0; i < level.typeCount; ++i)
+    {
+        free(level.types[i]);
+        free(level.entities[i]);
+    }
+
+    free(level.types);
+    free(level.entityCount);
+    free(level.entities);
 }
