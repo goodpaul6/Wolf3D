@@ -8,6 +8,18 @@
 #include "utils.hpp"
 
 static const float LEVEL_SCALE_FACTOR = 2;
+static const float PLAYER_DOOR_OPEN_DIST = 2.5f;
+static const float DOOR_OPEN_SPEED = 1.5f;
+static const float DOOR_OPEN_AMOUNT = 1.5f;
+
+static float Dist2(const Entity& a, const Entity& b)
+{
+    float dx = a.x - b.x;
+    float dy = a.y - b.y;
+    float dz = a.z - b.z;
+
+    return dx * dx + dy * dy + dz * dz;
+}
 
 static void Forward(float lookAngle, float& x, float& z, float scale = 1)
 {
@@ -128,12 +140,17 @@ static void MoveBy(Entity& e, float x, float y, float z, const Game& game)
 static void Update(Player& player, const Game& game, float dt)
 {
     if(!IsKeyDown(SDL_SCANCODE_LSHIFT))
-    {
+    {	
         if(IsKeyDown(SDL_SCANCODE_A))
             player.lookAngle += 2.5f * dt;
         else if(IsKeyDown(SDL_SCANCODE_D))
             player.lookAngle -= 2.5f * dt;
     }
+
+    if(IsKeyDown(SDL_SCANCODE_SPACE))
+        player.gunFrame = (SDL_GetTicks() / 80) % 5;
+    else
+        player.gunFrame = 0;
 
     bool move = false;
     float moveAngle = 0;
@@ -192,19 +209,13 @@ static void Update(Player& player, const Game& game, float dt)
         player.stride += 10 * dt;
     }
 
-    if(IsKeyDown(SDL_SCANCODE_E))
+    if(WasKeyPressed(SDL_SCANCODE_E))
     {
-        // Open doors in front of us
+        // Open doors near us
         for(int i = 0; i < game.doorCount; ++i)
         {
-            if(Collide(player, player.x + x, player.y, player.z + z, game.doors[i]))
-            {
-                if(!game.doors[i].open)
-                {
-                    game.doors[i].open = true;
-                    game.doors[i].x += 1.5f;
-                }
-            }
+			if (Dist2(game.doors[i], player) < PLAYER_DOOR_OPEN_DIST * PLAYER_DOOR_OPEN_DIST)
+				game.doors[i].open = !game.doors[i].open;
         }
     }
 }
@@ -216,14 +227,12 @@ void Init(Game& game)
     game.basicShader = LoadShader("shaders/basic.vert", "shaders/basic.frag");
 
     game.levelTexture = LoadTexture("textures/wolf.png");
+    game.doorTexture = LoadTexture("textures/door.png");
     game.gunTexture = LoadTexture("textures/pistol.png");
 
-    game.gunMesh = CreatePlaneMesh();
+    game.gunMesh = CreatePlaneMesh(0, 0, 64 / 320.0f, 1.0f);
 
-    float u1, v1, u2, v2; 
-    GetTileUV(game.levelTexture, 28, u1, v1, u2, v2);
-
-    game.doorMesh = CreatePlaneMesh(u1, v1, u2, v2);
+    game.doorMesh = LoadMesh("models/door.obj");
     game.levelMesh = CreateLevelMesh(game.level, game.levelTexture);
 
     game.player.hasbb = true;
@@ -231,37 +240,41 @@ void Init(Game& game)
     game.player.max = glm::vec3(0.5f, 1, 0.5f);
     
     // Setup entities
-    for(int i = 0; i < game.level.typeCount; ++i)
+    
+    // Make sure one player is on level
+    if(game.level.entityCount[ET_PLAYER] != 1)
+        CRASH("Invalid number of players on level\n");
+
+    const EntityInfo& playerInfo = game.level.entities[ET_PLAYER][0];
+
+    game.player.x = playerInfo.x;
+    game.player.y = playerInfo.y;
+    game.player.z = playerInfo.z;
+
+    game.doorCount = game.level.entityCount[ET_DOOR];
+    game.doors = new Door[game.doorCount];
+
+    for(int i = 0; i < game.doorCount; ++i)
     {
-        if(strcmp(game.level.types[i], "player") == 0)
-        {
-            if(game.level.entityCount[i] != 1)
-                CRASH("Invalid number of players on the map.\n");
-            
-            const EntityInfo& info = game.level.entities[i][0];
+        const EntityInfo& info = game.level.entities[ET_DOOR][i];
+        Door& door = game.doors[i];
 
-            game.player.x = info.x;
-            game.player.y = info.y;
-            game.player.z = info.z;
+        door.dir = info.dir;
+        door.x = door.sx = info.x;
+        door.y = info.y;
+        door.z = door.sz = info.z;
+
+        door.hasbb = true;
+
+        if(door.dir % 2 == 1)
+        {
+            door.min = glm::vec3(-1, 0, -0.2f);
+            door.max = glm::vec3(1, 1, 0.2f);
         }
-        else if(strcmp(game.level.types[i], "door") == 0)
+        else
         {
-            game.doorCount = game.level.entityCount[i];
-            game.doors = (Door*)calloc(game.doorCount, sizeof(Door));
-
-            for(int j = 0; j < game.doorCount; ++j)
-            {
-                const EntityInfo& info = game.level.entities[i][j];
-                Door& door = game.doors[j];
-
-                door.x = info.x;
-                door.y = info.y;
-                door.z = info.z;
-
-                door.hasbb = true;
-                door.min = glm::vec3(-1, 0, -0.15f);
-                door.max = glm::vec3(1, 1, 0.15f);
-            }
+            door.min = glm::vec3(-0.2f, 0, -1);
+            door.max = glm::vec3(0.2f, 0, 1);
         }
     }
 }
@@ -269,6 +282,26 @@ void Init(Game& game)
 void Update(Game& game, float dt)
 {
     Update(game.player, game, dt);
+
+    for(int i = 0; i < game.doorCount; ++i)
+    {
+        if(game.doors[i].open)
+        {
+            if(game.doors[i].openness < 1)
+                game.doors[i].openness += DOOR_OPEN_SPEED * dt; 
+        }
+        else
+        {
+            if(game.doors[i].openness > 0)
+                game.doors[i].openness -= DOOR_OPEN_SPEED * dt;
+        }
+
+        float xmov = game.doors[i].openness * sinf(glm::radians(90.0f * game.doors[i].dir)) * DOOR_OPEN_AMOUNT;
+        float zmov = game.doors[i].openness * cosf(glm::radians(90.0f * game.doors[i].dir)) * DOOR_OPEN_AMOUNT;
+
+        game.doors[i].x = game.doors[i].sx + xmov;
+        game.doors[i].z = game.doors[i].sz + zmov;
+    }
 }
 
 void Draw(const Game& game, const glm::mat4& proj)
@@ -303,16 +336,12 @@ void Draw(const Game& game, const glm::mat4& proj)
     // Draw doors
     for(int i = 0; i < game.doorCount; ++i)
     {
-        float x = 0;
+        glm::mat4 rot = glm::rotate(glm::radians(90.0f * game.doors[i].dir), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // TODO: Make actual door model instead of copying plane twice
-        model = glm::translate(glm::vec3(game.doors[i].x + x, game.doors[i].y, game.doors[i].z));
+        model = glm::translate(glm::vec3(game.doors[i].x, game.doors[i].y, game.doors[i].z)) * rot;
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
-        Draw(game.doorMesh);
-
-        model = glm::translate(glm::vec3(game.doors[i].x + x, game.doors[i].y, game.doors[i].z + 0.3f));
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+        glBindTexture(GL_TEXTURE_2D, game.doorTexture.id);
 
         Draw(game.doorMesh);
     }
@@ -338,6 +367,8 @@ void Draw(const Game& game, const glm::mat4& proj)
 
     glBindTexture(GL_TEXTURE_2D, game.gunTexture.id);
 
+    PlaneShowFrame(game.gunMesh, game.gunTexture, 64, 64, game.player.gunFrame);
+
     glDisable(GL_DEPTH_TEST); 
     Draw(game.gunMesh);
     glEnable(GL_DEPTH_TEST);
@@ -345,7 +376,7 @@ void Draw(const Game& game, const glm::mat4& proj)
 
 void Destroy(Game& game)
 {
-    free(game.doors);
+    delete game.doors;
 
     DestroyLevel(game.level);
 

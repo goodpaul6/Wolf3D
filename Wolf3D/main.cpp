@@ -6,6 +6,7 @@
 
 #include "utils.hpp"
 #include "game.hpp"
+#include "input.hpp"
 
 static const int WINDOW_WIDTH = 640;
 static const int WINDOW_HEIGHT = 480;
@@ -37,6 +38,8 @@ int main(int argc, char** argv)
 	if (gl3wInit())
 		CRASH("Failed to initialize gl3w\n");
 
+    SDL_GL_SetSwapInterval(-1);
+
 	SDL_Event event;
 	bool running = true;
 
@@ -67,6 +70,8 @@ int main(int argc, char** argv)
                     glViewport(0, 0, event.window.data1, event.window.data2);
             }
         }
+
+        UpdateInput();
 
         Uint64 elapsed = SDL_GetPerformanceCounter() - ticks;
         ticks = SDL_GetPerformanceCounter();

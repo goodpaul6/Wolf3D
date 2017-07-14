@@ -12,3 +12,4 @@ Release/
 *.log 
 *.trace 
 *.vcxproj* 
+*.sln 

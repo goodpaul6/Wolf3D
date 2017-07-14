@@ -178,6 +178,34 @@ Mesh CreateLevelMesh(const Level& level, const Texture& texture)
     return mesh;
 }
 
+void PlaneShowFrame(Mesh& mesh, const Texture& texture, int fw, int fh, int frame)
+{
+    int columns = texture.width / fw;
+
+    float w = (float)fw / texture.width;
+    float h = (float)fh / texture.height;
+
+    float u = (frame % columns) * w;
+    float v = (frame / columns) * h;
+
+    const Vertex vertices[] =
+    {
+        // Top-left
+        { -1, 1, 0, u, v },
+        // Top-right
+        { 1, 1, 0, u + w, v },
+        // Bottom-right
+        { 1, -1, 0, u + w, v + h },
+        // Bottom-left
+        { -1, -1, 0, u, v + h }
+    };
+    
+    // TODO: Check if this is safe to do without binding vertex array
+
+    glBindBuffer(GL_ARRAY_BUFFER, mesh.buffers[0]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
+}
+
 void DestroyMesh(Mesh& mesh)
 {
     glDeleteVertexArrays(1, &mesh.vertexArray);

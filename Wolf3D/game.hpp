@@ -15,11 +15,17 @@ struct Player : public Entity
 {
     float lookAngle = 0;         // radians
     float stride = 0;
+
+    int gunFrame = 1;
 };
 
 struct Door : public Entity
 {
+    int dir = 0;
+    
+    float sx = 0, sz = 0;
     bool open = false;
+    float openness = 0.0f; 
 };
 
 struct Game
@@ -31,11 +37,12 @@ struct Game
     
     Level level;
 
-    Mesh levelMesh;
-    Mesh gunMesh;
-    Mesh doorMesh;
+    mutable Mesh levelMesh;
+    mutable Mesh gunMesh;
+    mutable Mesh doorMesh;
 
     Texture levelTexture;
+    Texture doorTexture;
     Texture gunTexture;
 
     Shader basicShader;

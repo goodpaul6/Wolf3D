@@ -1,7 +1,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#include <assert.h>
 
 #include "resources.hpp"
+#include "graphics.hpp"
 #include "utils.hpp"
 
 static GLuint CreateTexture(GLuint format, const unsigned char* data, int w, int h)
@@ -132,6 +134,93 @@ Shader LoadShader(const char* vertexFilename, const char* fragmentFilename)
     return shader;
 }
 
+Mesh LoadMesh(const char* filename)
+{
+    // x,y,z per vertex
+    static float positions[MAX_LOAD_MESH_VERTICES][3];
+    // u,v per vertex
+    static float texCoords[MAX_LOAD_MESH_VERTICES][2];
+
+    static ushort indices[MAX_LOAD_MESH_VERTICES];
+    static Vertex vertices[MAX_LOAD_MESH_VERTICES];
+
+    const char* ext = strrchr(filename, '.');
+    
+    // Only supports obj files
+    assert(ext && strcmp(ext, ".obj") == 0); 
+
+    FILE* file = fopen(filename, "rb");
+
+    if(!file)
+        CRASH("Failed to open mesh file '%s'\n", filename);
+
+    int posCount = 0;
+    int texCoordCount = 0;
+
+    // TODO: Intelligent generation of indices
+    // Right now we're basically not using index
+    // buffer at all so indexCount == vertexCount
+    int vertexCount = 0;
+
+    while(true)
+    {
+        static char lineHeader[128];
+
+        int res = fscanf(file, "%s", lineHeader);
+        if (res == EOF)
+            break;
+
+        if (strcmp(lineHeader, "v") == 0)
+        {
+            float pos[3];
+
+            fscanf(file, "%f %f %f\n", &pos[0], &pos[1], &pos[2]);
+
+            memcpy(positions[posCount++], pos, sizeof(pos));
+        }
+        else if (strcmp(lineHeader, "vt") == 0)
+        {
+            float texCoord[2];
+
+            fscanf(file, "%f %f\n", &texCoord[0], &texCoord[1]);
+            memcpy(texCoords[texCoordCount++], texCoord, sizeof(texCoord)); 
+        }
+        else if (strcmp(lineHeader, "f") == 0)
+        {
+            int pos[3], texCoord[3];
+            
+            fscanf(file, "%d/%d %d/%d %d/%d\n",
+                &pos[0], &texCoord[0],
+                &pos[1], &texCoord[1],
+                &pos[2], &texCoord[2]);
+
+            for (int i = 0; i < 3; ++i)
+            {
+                float x = positions[pos[i] - 1][0];
+                float y = positions[pos[i] - 1][1];
+                float z = positions[pos[i] - 1][2];
+                float u = texCoords[texCoord[i] - 1][0];
+                float v = texCoords[texCoord[i] - 1][1];
+            
+                if(vertexCount >= MAX_LOAD_MESH_VERTICES)
+                    CRASH("Model exceeded maximum number of vertices\n");
+
+                // HACK: Blender exports 0, 0 as top left of texture
+                // whereas OpenGL expects 0, 0, as bottom left
+                v = 1 - v;
+            
+                indices[vertexCount] = vertexCount;
+                vertices[vertexCount] = { x, y, z, u, v };
+
+                vertexCount += 1;
+            }
+        }
+    }
+
+    // TODO: Change vertexCount to indexCount once that's changed
+    return CreateMesh(vertexCount, vertices, vertexCount, indices);
+}
+
 Level LoadLevel(const char* filename)
 {
     FILE* file = fopen(filename, "r");
@@ -155,6 +244,7 @@ Level LoadLevel(const char* filename)
         }
     }
 
+#if 0
     int typeCount;
     fscanf(file, "%d", &typeCount);
  
@@ -180,6 +270,7 @@ Level LoadLevel(const char* filename)
 
         entities[i] = typeEnts;
     }
+#endif
 
     Level level;
 
@@ -187,11 +278,32 @@ Level LoadLevel(const char* filename)
     level.width = w;
     level.height = h;
 
-    level.typeCount = typeCount;
-    level.types = types;
+    for(int i = 0; i < ET_COUNT; ++i)
+        fscanf(file, "%d", &level.entityCount[i]);
 
-    level.entityCount = entityCount;
-    level.entities = entities;
+    for(int i = 0; i < ET_COUNT; ++i)
+    { 
+        level.entities[i] = (EntityInfo*)malloc(sizeof(EntityInfo) * level.entityCount[i]); 
+        for(int j = 0; j < level.entityCount[i]; ++j)
+        {
+            // Read an EntityInfo
+            EntityInfo& info = level.entities[i][j];
+
+            info.type = (EntityType)i;
+
+            // Always present
+            fscanf(file, "%f %f %f", &info.x, &info.y, &info.z);
+
+            switch(info.type)
+            {
+                case ET_DOOR:
+                {
+                    // Door direction
+                    fscanf(file, "%d", &info.dir);
+                } break;
+            }
+        }
+    }
 
     return level;
 }
@@ -199,14 +311,6 @@ Level LoadLevel(const char* filename)
 void DestroyLevel(Level& level)
 {
     free(level.tiles);
-
-    for(int i = 0; i < level.typeCount; ++i)
-    {
-        free(level.types[i]);
+    for(int i = 0; i < ET_COUNT; ++i)
         free(level.entities[i]);
-    }
-
-    free(level.types);
-    free(level.entityCount);
-    free(level.entities);
 }

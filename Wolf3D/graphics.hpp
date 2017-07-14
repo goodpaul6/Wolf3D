@@ -30,6 +30,10 @@ void GetTileUV(const Texture& texture, int tile, float& u1, float& v1, float& u2
 Mesh CreateMesh(int vertexCount, const Vertex* vertices, int indexCount, const ushort* indices);
 Mesh CreatePlaneMesh(float u1 = 0, float v1 = 0, float u2 = 1, float v2 = 1);
 Mesh CreateLevelMesh(const Level& level, const Texture& texture);
+
+// Changes the plane's uv coordinates to show a particular frame in a texture
+void PlaneShowFrame(Mesh& mesh, const Texture& texture, int fw, int fh, int frame);
+
 void DestroyMesh(Mesh& mesh);
 
 void Draw(const Mesh& mesh);
