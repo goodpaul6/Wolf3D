@@ -22,6 +22,7 @@ enum EntityType : int
 {
     ET_PLAYER,
     ET_DOOR,
+    ET_ENEMY,
     ET_COUNT
 };
 
@@ -32,7 +33,13 @@ struct EntityInfo
     
     union 
     {
-        int dir;    // ET_DOOR
+        int dir;        // ET_DOOR
+
+        struct          // ET_ENEMY
+        {
+            int health;     
+            float speed;
+        };
     };
 };
 

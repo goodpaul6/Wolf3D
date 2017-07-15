@@ -244,34 +244,6 @@ Level LoadLevel(const char* filename)
         }
     }
 
-#if 0
-    int typeCount;
-    fscanf(file, "%d", &typeCount);
- 
-    char** types = (char**)malloc(sizeof(char*) * typeCount);
-
-    int* entityCount = (int*)malloc(sizeof(int) * typeCount);
-    EntityInfo** entities = (EntityInfo**)malloc(sizeof(EntityInfo*) * typeCount);
-
-    for(int i = 0; i < typeCount; ++i)
-    {
-        types[i] = (char*)malloc(ENTITY_TYPE_MAX_LENGTH + 1);
-        fscanf(file, "%32s", types[i]);
-        
-        int typeEntCount;
-        fscanf(file, "%d", &typeEntCount);
-        
-        entityCount[i] = typeEntCount;
-
-        EntityInfo* typeEnts = (EntityInfo*)malloc(sizeof(EntityInfo) * typeEntCount);
-
-        for(int j = 0; j < typeEntCount; ++j)
-            fscanf(file, "%f %f %f", &typeEnts[j].x, &typeEnts[j].y, &typeEnts[j].z);
-
-        entities[i] = typeEnts;
-    }
-#endif
-
     Level level;
 
     level.tiles = tiles;
@@ -298,8 +270,13 @@ Level LoadLevel(const char* filename)
             {
                 case ET_DOOR:
                 {
-                    // Door direction
                     fscanf(file, "%d", &info.dir);
+                } break;
+
+                case ET_ENEMY:
+                {
+                    fscanf(file, "%d", &info.health);
+                    fscanf(file, "%f", &info.speed);
                 } break;
             }
         }

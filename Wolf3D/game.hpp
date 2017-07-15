@@ -16,7 +16,9 @@ struct Player : public Entity
     float lookAngle = 0;         // radians
     float stride = 0;
 
-    int gunFrame = 1;
+    bool shoot = false;         // shoot animation enabled
+    float animTimer = 0;
+    int frame = 0;
 };
 
 struct Door : public Entity
@@ -28,22 +30,39 @@ struct Door : public Entity
     float openness = 0.0f; 
 };
 
+struct Enemy : public Entity
+{
+    float lookAngle = 0;
+    int health = 1;
+    float speed = 2;
+    float hitTimer = 0;
+
+    int frame = 0;
+};
+
 struct Game
 {
     Player player;
 
     int doorCount = 0;
     Door* doors = nullptr;
+
+    int enemyCount = 0;
+    Enemy* enemies = nullptr;
     
     Level level;
 
+    mutable Mesh enemyMesh;
     mutable Mesh levelMesh;
     mutable Mesh gunMesh;
     mutable Mesh doorMesh;
+    mutable Mesh boxMesh;
 
     Texture levelTexture;
     Texture doorTexture;
     Texture gunTexture;
+    Texture enemyTexture;
+    Texture whiteTexture;
 
     Shader basicShader;
 };
