@@ -12,4 +12,11 @@ Whenever I attempted to write a 3D game in the past, I would get bogged down by 
 * Level and entities being generated/loaded from text format
 * Looking around + Moving forward/backward + Strafing
 
+## Week 1 + Weekend
+![Alt text](screens/week1weekend.png?raw=true "Week 1 + Weekend")
+### Features
+* Level + Bounding Box raycasting
+* Bullet impacts
+* Painting entities which shake and change texture upon being shot
+* Enemies which follow you around and can be shot + killed
 
