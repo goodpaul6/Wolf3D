@@ -269,6 +269,7 @@ Level LoadLevel(const char* filename)
             switch(info.type)
             {
                 case ET_DOOR:
+                case ET_PAINTING:
                 {
                     fscanf(file, "%d", &info.dir);
                 } break;

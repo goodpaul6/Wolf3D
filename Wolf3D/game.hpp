@@ -3,6 +3,8 @@
 #include "graphics.hpp"
 #include "resources.hpp"
 
+static const int GAME_MAX_BULLET_IMPACTS = 64;
+
 struct Entity
 {
     bool hasbb = false;
@@ -18,7 +20,7 @@ struct Player : public Entity
 
     bool shoot = false;         // shoot animation enabled
     float animTimer = 0;
-    int frame = 0;
+    int frame = 0, lastFrame = 0;
 };
 
 struct Door : public Entity
@@ -40,6 +42,22 @@ struct Enemy : public Entity
     int frame = 0;
 };
 
+struct Painting : public Entity
+{
+    int dir = 0;
+    float angle = 0;
+    float angularVel = 0;
+
+    // It falls once hit
+    bool hit = false;
+};
+
+struct Impact : public Entity
+{
+    float life = 0;
+    int dir = 0;
+};
+
 struct Game
 {
     Player player;
@@ -49,6 +67,11 @@ struct Game
 
     int enemyCount = 0;
     Enemy* enemies = nullptr;
+
+    int paintingCount = 0;
+    Painting* paintings = nullptr;
+    
+    Impact impacts[GAME_MAX_BULLET_IMPACTS];
     
     Level level;
 
@@ -56,13 +79,18 @@ struct Game
     mutable Mesh levelMesh;
     mutable Mesh gunMesh;
     mutable Mesh doorMesh;
+    mutable Mesh paintingMesh;
     mutable Mesh boxMesh;
+    mutable Mesh planeMesh;
 
     Texture levelTexture;
     Texture doorTexture;
     Texture gunTexture;
     Texture enemyTexture;
     Texture whiteTexture;
+    Texture paintingTexture;
+    Texture paintingHitTexture;
+    Texture bulletImpactTexture;
 
     Shader basicShader;
 };

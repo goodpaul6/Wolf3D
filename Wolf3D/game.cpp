@@ -8,11 +8,24 @@
 #include "input.hpp"
 #include "utils.hpp"
 
+// NOTES:
+// - Determining impact location can be generalized by clipping 
+//   the incident ray to the bounding box of the object that was
+//   hit (just like it is done in RayLevel)
+
+// TODO:
+// - RayLevel should only be called for precise hit location information
+//   and this should only be required at the end of Shoot() where bullet
+//   impacts are created. Otherwise, we just get the ray bounds and use
+//   LevelHasTile()
+
 static const float LEVEL_SCALE_FACTOR = 2;
+static const int LEVEL_RAY_SAMPLE_COUNT = 100;
 static const float PLAYER_DOOR_OPEN_DIST = 2.5f;
 static const float DOOR_OPEN_SPEED = 1.5f;
 static const float DOOR_OPEN_AMOUNT = 1.5f;
 static const float ENEMY_HIT_TIME = 1.5f;
+static const float IMPACT_LIFE = 1.5f;
 
 static float Dist2(const Entity& a, const Entity& b)
 {
@@ -27,6 +40,53 @@ static void Forward(float lookAngle, float& x, float& z, float scale = 1)
 {
     x = sinf(lookAngle) * scale;
     z = cosf(lookAngle) * scale;
+}
+
+// Projects the x, y coords onto each direction's vector,
+// picking the one with the largest projection
+static int VecToDir(float x, float z)
+{
+    const float dirs[4][2] =
+    {
+        // x, z
+        { 0, 1 },
+        { 1, 0 },
+        { 0, -1 },
+        { -1, 0 }
+    };
+
+    int maxDir = 0;
+    float maxDot = 0;
+
+    for(int i = 0; i < 4; ++i) 
+    {
+        float dot = dirs[i][0] * x + dirs[i][1] * z;
+        
+        if(dot > maxDot)
+        {
+            maxDir = i;
+            maxDot = dot;
+        }
+    }
+    
+    return maxDir;
+}
+
+static void CreateImpact(Game& game, float x, float y, float z, int dir)
+{
+    for(int i = 0; i < GAME_MAX_BULLET_IMPACTS; ++i)
+    {
+        if(game.impacts[i].life <= 0)
+        {
+            game.impacts[i].x = x;
+            game.impacts[i].y = y;
+            game.impacts[i].z = z;
+            game.impacts[i].life = IMPACT_LIFE;
+            game.impacts[i].dir = dir;
+
+            return;
+        }
+    }
 }
 
 // Assumes direction is normalized
@@ -71,60 +131,89 @@ static bool LevelHasTile(const Level& level, int left, int top, int right, int b
     return false;
 }
 
-static bool RayLevel(float x, float z, float dx, float dz, const Level& level)
+// origin = origin of the ray, delta = offset from the origin to the target
+static bool RayLevel(const glm::vec2& origin, const glm::vec2& delta, const Level& level, glm::vec2& hit, int& dir)
 {
-    // Check the box containing the ray against level tiles 
-    int left = (int)(x / LEVEL_SCALE_FACTOR);
-    int top = (int)(z / LEVEL_SCALE_FACTOR);
-    int right = (int)((x + dx) / LEVEL_SCALE_FACTOR);
-    int bottom = (int)((z + dz) / LEVEL_SCALE_FACTOR);
+    // Advance from origin sample count times and check if a wall was hit or
+    // we go out of bounds
+    for(int i = 0; i < LEVEL_RAY_SAMPLE_COUNT; ++i)
+    {
+        glm::vec2 pos = origin + (delta / (float)LEVEL_RAY_SAMPLE_COUNT) * (float)i;
+
+        int tx = (int)(pos.x / LEVEL_SCALE_FACTOR);
+        int ty = (int)(pos.y / LEVEL_SCALE_FACTOR);
     
-    return LevelHasTile(level, left, top, right, bottom);
+        if(tx < 0 || tx >= level.width) continue;
+        if(ty < 0 || ty >= level.height) continue;
+
+        if(level.tiles[tx + ty * level.width] > 0)
+        {
+            // Center of tile (in world space)
+            glm::vec2 c(tx * LEVEL_SCALE_FACTOR + LEVEL_SCALE_FACTOR / 2, 
+                        ty * LEVEL_SCALE_FACTOR + LEVEL_SCALE_FACTOR / 2);
+
+            // Vector from center of tile to origin (clamped to extents of tile)
+            /*glm::vec2 a = glm::clamp(origin - c, glm::vec2(-LEVEL_SCALE_FACTOR / 2,
+                                                           -LEVEL_SCALE_FACTOR / 2),
+                                                 glm::vec2(LEVEL_SCALE_FACTOR / 2,
+                                                           LEVEL_SCALE_FACTOR / 2));
+
+            // Added back to tile center 
+            hit = c + a;*/
+        
+            hit = pos - delta / (float)LEVEL_RAY_SAMPLE_COUNT;
+            dir = VecToDir((hit - c).x, (hit - c).y);
+
+	        return true;
+        }
+    }
+    
+    return false;
 }
 
-static bool Shoot(float x, float y, float z, float angle, const Game& game)
-{
+static bool CheckShot(float x, float y, float z, float angle, const Entity& target, Game& game)
+{ 
     glm::vec3 start{x, y, z};
     glm::vec3 dir{sinf(angle), 0, cosf(angle)}; 
+    
+    // Check to see if level is in the way of the enemy
+    glm::vec2 hit;
+    int d;
+    if(RayLevel(glm::vec2(start.x, start.z), glm::vec2(target.x - start.x, target.z - start.z), game.level, hit, d))
+        return false;
 
+    // TODO: Think of a more optimal solution than checking every door
+    // Check to see if there are any doors in the way
+    for(int i = 0; i < game.doorCount; ++i)
+    {
+        const Door& door = game.doors[i];
+        
+        // Check to see if the door is closer to us than the target
+        // If it s farther, we can assume the door isn't in the way
+        if(glm::length2(glm::vec3(door.x, door.y, door.z) - start) >
+           glm::length2(glm::vec3(target.x, target.y, target.z) - start))
+            continue;
+
+        // Check for ray collision with the door
+        if(RayBox(start, dir, glm::vec3(door.x, door.y, door.z), door.min, door.max))
+            return false;
+    }
+
+	if (!target.hasbb) return false;
+
+    return RayBox(start, dir, glm::vec3(target.x, target.y, target.z), target.min, target.max);
+}
+
+static void Shoot(float x, float y, float z, float angle, Game& game)
+{
     for(int i = 0; i < game.enemyCount; ++i)
     {
         Enemy& enemy = game.enemies[i];
 
         if(enemy.health <= 0)
-            continue;
-     
-        // Check to see if level is in the way of the enemy
-        // and the origin of the ray
-        if(RayLevel(start.x, start.z, (enemy.x - start.x), (enemy.z - start.z), game.level))
-            continue;
+            continue;     
 
-        bool hitDoor = false;
-
-        // TODO: Think of a more optimal solution than checking every door
-        // Check to see if there are any doors in the way
-        for(int i = 0; i < game.doorCount; ++i)
-        {
-            const Door& door = game.doors[i];
-            
-            // Check to see if the door is closer to us than the enemy
-            // If it s farther, we can assume the door isn't in the way
-            if(glm::length2(glm::vec3(door.x, door.y, door.z) - start) >
-               glm::length2(glm::vec3(enemy.x, enemy.y, enemy.z) - start))
-                continue;
-
-            // Check for ray collision with the door
-            if(RayBox(start, dir, glm::vec3(door.x, door.y, door.z), door.min, door.max))
-            {
-                hitDoor = true;
-                break;
-            }
-        }
-
-        if(hitDoor)
-            continue;
-
-        if(RayBox(start, dir, glm::vec3(enemy.x, enemy.y, enemy.z), enemy.min, enemy.max))
+        if(CheckShot(x, y, z, angle, enemy, game))
         {
             enemy.health -= 1;
 
@@ -133,11 +222,29 @@ static bool Shoot(float x, float y, float z, float angle, const Game& game)
             else
                 enemy.hitTimer = ENEMY_HIT_TIME;
 
-			return true;
+			return;
         }
     }
 
-	return false;
+    for(int i = 0; i < game.paintingCount; ++i)
+    {
+        Painting& painting = game.paintings[i];
+
+        if(CheckShot(x, y, z, angle, painting, game))
+        {
+            if(!painting.hit)
+                painting.hit = true;
+            painting.angularVel += ((rand() / (float)RAND_MAX) - 0.5f);
+            return;
+        }
+    }
+
+    glm::vec2 delta(sinf(angle) * 20, cosf(angle) * 20);
+
+    glm::vec2 hit;
+    int dir;
+    if(RayLevel(glm::vec2(x, z), delta, game.level, hit, dir))
+        CreateImpact(game, hit.x, ((float)rand() / RAND_MAX) * 0.2f - 0.1f, hit.y, dir);
 }
 
 static bool Collide(const Entity& e, float x, float z, const Level& level)
@@ -183,59 +290,49 @@ static void MoveBy(Entity& e, float x, float z, const Level& level)
         e.z += z;
 }
 
+static bool CollideSolids(const Entity& e, float x, float y, float z, const Game& game)
+{
+    if(Collide(e, x, z, game.level))
+        return true;
+
+    for(int i = 0; i < game.doorCount; ++i)
+    {
+        if(Collide(e, x, y, z, game.doors[i]))
+            return true;
+    }
+
+    for(int i = 0; i < game.paintingCount; ++i)
+    {
+        if(Collide(e, x, y, z, game.paintings[i]))
+            return true;
+    }
+
+    return false;
+}
+
 static void MoveBy(Entity& e, float x, float y, float z, const Game& game)
 {
-    if(Collide(e, e.x + x, e.z, game.level))
-        x = 0;
-
-    if(Collide(e, e.x, e.z + z, game.level))
-        z = 0;
-
     // TODO: Clean this up so it's not doing float cmp
     if(x != 0)
     {
-        for(int i = 0; i < game.doorCount; ++i)
-        {
-            if(Collide(e, e.x + x, e.y, e.z, game.doors[i]))
-            {
-                x = 0;
-                break;
-            }
-        }
-
+        if(CollideSolids(e, e.x + x, e.y, e.z, game)) x = 0;
         e.x += x;
     }
 
     if(y != 0)
     {
-        for(int i = 0; i < game.doorCount; ++i)
-        {
-            if(Collide(e, e.x, e.y + y, e.z, game.doors[i]))
-            {
-                y = 0;
-                break;
-            }
-        }
-
+        if(CollideSolids(e, e.x, e.y + y, e.z, game)) y = 0;
         e.y += y;
     }
     
     if(z != 0)
     {
-        for(int i = 0; i < game.doorCount; ++i)
-        {
-            if(Collide(e, e.x, e.y, e.z + z, game.doors[i]))
-            {
-                z = 0;
-                break;
-            }
-        }
-
+        if(CollideSolids(e, e.x, e.y, e.z + z, game)) z = 0;
         e.z += z;
     }
 }
 
-static void Update(Player& player, const Game& game, float dt)
+static void Update(Player& player, Game& game, float dt)
 {
     if(!IsKeyDown(SDL_SCANCODE_LSHIFT))
     {	
@@ -247,10 +344,15 @@ static void Update(Player& player, const Game& game, float dt)
 
     if(player.shoot)
     {
-        if(player.animTimer < 0.25f) 
+        if(player.animTimer < 0.20f) 
         {
             player.animTimer += dt;
-            player.frame = (int)(player.animTimer / 0.0625f);
+            player.frame = (int)(player.animTimer / 0.04f);
+            
+            if(player.lastFrame != 3 && player.frame == 3)
+                Shoot(player.x, 0, player.z, player.lookAngle, game);
+
+            player.lastFrame = player.frame;
         }
         else
         {
@@ -265,7 +367,7 @@ static void Update(Player& player, const Game& game, float dt)
         // that bobs below the bounding boxes of enemies
         // Maybe we shouldn't move the player y pos directly
         // and just render with the bob
-        Shoot(player.x, 0.5f, player.z, player.lookAngle, game);
+        //Shoot(player.x, 0, player.z, player.lookAngle, game);
         player.shoot = true; 
     }
 
@@ -335,9 +437,32 @@ static void Update(Player& player, const Game& game, float dt)
 				game.doors[i].open = !game.doors[i].open;
         }
     }
+
+    if(WasKeyPressed(SDL_SCANCODE_P))
+        printf("Player pos: %f %f %f\n", player.x, player.y, player.z);
 }
 
-void Update(Enemy& enemy, float dt, Game& game)
+static void Update(Door& door, float dt)
+{
+    if(door.open)
+    {
+        if(door.openness < 1)
+            door.openness += DOOR_OPEN_SPEED * dt; 
+    }
+    else
+    {
+        if(door.openness > 0)
+            door.openness -= DOOR_OPEN_SPEED * dt;
+    }
+
+    float xmov = door.openness * sinf(glm::radians(90.0f * door.dir)) * DOOR_OPEN_AMOUNT;
+    float zmov = door.openness * cosf(glm::radians(90.0f * door.dir)) * DOOR_OPEN_AMOUNT;
+
+    door.x = door.sx + xmov;
+    door.z = door.sz + zmov;
+}
+
+static void Update(Enemy& enemy, float dt, Game& game)
 {
     enemy.lookAngle = game.player.lookAngle + (float)M_PI;
     
@@ -362,6 +487,15 @@ void Update(Enemy& enemy, float dt, Game& game)
     }
 }
 
+static void Update(Painting& painting, float dt)
+{
+    if(painting.hit)
+    {
+        painting.angle += painting.angularVel * dt;
+        painting.angularVel += -painting.angle * 20 * dt;
+    }
+}
+
 void Init(Game& game)
 {
     game.level = LoadLevel("levels/test.map");
@@ -373,11 +507,16 @@ void Init(Game& game)
     game.gunTexture = LoadTexture("textures/pistol.png");
     game.enemyTexture = LoadTexture("textures/guard.png");
     game.whiteTexture = LoadTexture("textures/white.png");
+    game.paintingTexture = LoadTexture("textures/painting1.png");
+    game.paintingHitTexture = LoadTexture("textures/painting1_hit.png");
+    game.bulletImpactTexture = LoadTexture("textures/bulletimpact.png");
 
-    game.gunMesh = CreatePlaneMesh(0, 0, 64 / 320.0f, 1.0f);
+    game.gunMesh = CreatePlaneMesh();
     game.enemyMesh = CreatePlaneMesh();
+    game.paintingMesh = LoadMesh("models/painting.obj");
     game.doorMesh = LoadMesh("models/door.obj");
     game.boxMesh = LoadMesh("models/box.obj");
+    game.planeMesh = CreatePlaneMesh();
     game.levelMesh = CreateLevelMesh(game.level, game.levelTexture);
 
     game.player.hasbb = true;
@@ -413,13 +552,13 @@ void Init(Game& game)
 
         if(door.dir % 2 == 1)
         {
-            door.min = glm::vec3(-1, 0, -0.2f);
-            door.max = glm::vec3(1, 1, 0.2f);
+            door.min = glm::vec3(-1, -0.5f, -0.2f);
+            door.max = glm::vec3(1, 0.5f, 0.2f);
         }
         else
         {
-            door.min = glm::vec3(-0.2f, 0, -1);
-            door.max = glm::vec3(0.2f, 1, 1);
+            door.min = glm::vec3(-0.2f, -0.5f, -1);
+            door.max = glm::vec3(0.2f, 0.5f, 1);
         }
     }
 
@@ -436,11 +575,38 @@ void Init(Game& game)
         enemy.z = info.z;
 
         enemy.hasbb = true;
-        enemy.min = glm::vec3(-0.3f, 0, -0.3f);
-        enemy.max = glm::vec3(0.3f, 1, 0.3f);
+        enemy.min = glm::vec3(-0.3f, -0.5f, -0.3f);
+        enemy.max = glm::vec3(0.3f, 0.5f, 0.3f);
 
         enemy.health = info.health;
         enemy.speed = info.speed;
+    }
+
+    game.paintingCount = game.level.entityCount[ET_PAINTING];
+    game.paintings = new Painting[game.paintingCount];
+
+    for(int i = 0; i < game.paintingCount; ++i)
+    {
+        const EntityInfo& info = game.level.entities[ET_PAINTING][i];
+        Painting& painting = game.paintings[i];
+
+        painting.x = info.x;
+        painting.y = info.y;
+        painting.z = info.z;
+
+        painting.dir = info.dir;
+
+        painting.hasbb = true;
+        if(painting.dir % 2 == 1)
+        {
+            painting.min = glm::vec3(-0.3f, -0.3f, -1);
+            painting.max = glm::vec3(0.3f, 0.3f, 1);
+        }
+        else
+        {
+            painting.min = glm::vec3(-1, -0.3f, -0.3f);
+            painting.max = glm::vec3(1, 0.3f, 0.3f);
+        }
     }
 }
 
@@ -449,27 +615,16 @@ void Update(Game& game, float dt)
     Update(game.player, game, dt);
 
     for(int i = 0; i < game.doorCount; ++i)
-    {
-        if(game.doors[i].open)
-        {
-            if(game.doors[i].openness < 1)
-                game.doors[i].openness += DOOR_OPEN_SPEED * dt; 
-        }
-        else
-        {
-            if(game.doors[i].openness > 0)
-                game.doors[i].openness -= DOOR_OPEN_SPEED * dt;
-        }
-
-        float xmov = game.doors[i].openness * sinf(glm::radians(90.0f * game.doors[i].dir)) * DOOR_OPEN_AMOUNT;
-        float zmov = game.doors[i].openness * cosf(glm::radians(90.0f * game.doors[i].dir)) * DOOR_OPEN_AMOUNT;
-
-        game.doors[i].x = game.doors[i].sx + xmov;
-        game.doors[i].z = game.doors[i].sz + zmov;
-    }
+        Update(game.doors[i], dt);
     
     for(int i = 0; i < game.enemyCount; ++i)
         Update(game.enemies[i], dt, game);
+
+    for(int i = 0; i < game.paintingCount; ++i)
+        Update(game.paintings[i], dt);
+
+    for(int i = 0; i < GAME_MAX_BULLET_IMPACTS; ++i)
+        game.impacts[i].life -= dt;
 }
 
 void Draw(const Game& game, const glm::mat4& proj)
@@ -531,6 +686,43 @@ void Draw(const Game& game, const glm::mat4& proj)
         Draw(game.enemyMesh);
 	}
     
+    // Draw paintings
+    for(int i = 0; i < game.paintingCount; ++i)
+    {
+        float rads = glm::radians(game.paintings[i].dir * 90.0f);
+    
+        glm::mat4 rot = glm::rotate(rads, glm::vec3(0, 1, 0));
+    
+        glm::vec3 axis(sinf(rads), 0, cosf(rads));
+
+        glm::mat4 shake = glm::rotate(game.paintings[i].angle, axis);
+
+        glm::mat4 model = glm::translate(glm::vec3(game.paintings[i].x, game.paintings[i].y, game.paintings[i].z)) * rot * glm::translate(glm::vec3(0, 0.5f, 0)) * shake * glm::translate(glm::vec3(0, -0.5f, 0));
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+            
+        if(!game.paintings[i].hit)
+            glBindTexture(GL_TEXTURE_2D, game.paintingTexture.id);
+        else
+            glBindTexture(GL_TEXTURE_2D, game.paintingHitTexture.id);
+
+        Draw(game.paintingMesh);
+    }
+
+    // Draw bullet impacts 
+    glBindTexture(GL_TEXTURE_2D, game.bulletImpactTexture.id);
+
+    for(int i = 0; i < GAME_MAX_BULLET_IMPACTS; ++i)
+    {
+        if(game.impacts[i].life <= 0) continue;
+
+        glm::mat4 rot = glm::rotate(glm::radians(game.impacts[i].dir * 90.0f), glm::vec3(0, 1, 0));
+
+        glm::mat4 model = glm::translate(glm::vec3(game.impacts[i].x, game.impacts[i].y, game.impacts[i].z)) * rot;
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+        Draw(game.planeMesh);
+    }
+
 #ifdef DEBUG_DRAW
     // Draw bounding boxes
     glBindTexture(GL_TEXTURE_2D, game.whiteTexture.id);
@@ -586,6 +778,7 @@ void Destroy(Game& game)
 {
     delete game.doors;
     delete game.enemies;
+    delete game.paintings;
 
     DestroyLevel(game.level);
 

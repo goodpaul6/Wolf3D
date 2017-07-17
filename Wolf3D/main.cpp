@@ -56,7 +56,7 @@ int main(int argc, char** argv)
     
     glClearColor(0, 0, 0, 1.0f);
 	
-	glm::mat4 proj = glm::perspective(glm::radians(45.0f), WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.05f, 100.0f);
+	glm::mat4 proj = glm::perspective(glm::radians(45.0f), WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.2f, 100.0f);
 
     while(running)
     {
