@@ -26,6 +26,9 @@ static const float DOOR_OPEN_SPEED = 1.5f;
 static const float DOOR_OPEN_AMOUNT = 1.5f;
 static const float ENEMY_HIT_TIME = 1.5f;
 static const float IMPACT_LIFE = 1.5f;
+static const float TRACER_MOVE_SPEED = 60.0f;
+static const float TRACER_Y_OFF = -0.2f;
+static const float TRACER_LIFE = 1.0f;
 
 static float Dist2(const Entity& a, const Entity& b)
 {
@@ -83,6 +86,23 @@ static void CreateImpact(Game& game, float x, float y, float z, int dir)
             game.impacts[i].z = z;
             game.impacts[i].life = IMPACT_LIFE;
             game.impacts[i].dir = dir;
+
+            return;
+        }
+    }
+}
+
+static void CreateTracer(Game& game, float x, float y, float z, float angle)
+{
+    for(int i = 0; i < GAME_MAX_BULLET_IMPACTS; ++i)
+    {
+        if(game.tracers[i].life <= 0)
+        {
+            game.tracers[i].x = x;
+            game.tracers[i].y = y;
+            game.tracers[i].z = z;
+            game.tracers[i].life = TRACER_LIFE;
+            game.tracers[i].shotAngle = angle;
 
             return;
         }
@@ -152,6 +172,8 @@ static bool RayLevel(const glm::vec2& origin, const glm::vec2& delta, const Leve
             glm::vec2 c(tx * LEVEL_SCALE_FACTOR + LEVEL_SCALE_FACTOR / 2, 
                         ty * LEVEL_SCALE_FACTOR + LEVEL_SCALE_FACTOR / 2);
 
+            // Get closest edge
+
             // Vector from center of tile to origin (clamped to extents of tile)
             /*glm::vec2 a = glm::clamp(origin - c, glm::vec2(-LEVEL_SCALE_FACTOR / 2,
                                                            -LEVEL_SCALE_FACTOR / 2),
@@ -206,6 +228,9 @@ static bool CheckShot(float x, float y, float z, float angle, const Entity& targ
 
 static void Shoot(float x, float y, float z, float angle, Game& game)
 {
+    // TODO: Think about whether tracers are even necessary
+    //CreateTracer(game, x, y + TRACER_Y_OFF, z, angle);
+
     for(int i = 0; i < game.enemyCount; ++i)
     {
         Enemy& enemy = game.enemies[i];
@@ -344,13 +369,13 @@ static void Update(Player& player, Game& game, float dt)
 
     if(player.shoot)
     {
-        if(player.animTimer < 0.20f) 
+        if(player.animTimer < 0.1f) 
         {
             player.animTimer += dt;
-            player.frame = (int)(player.animTimer / 0.04f);
+            player.frame = (int)(player.animTimer / 0.02f);
             
             if(player.lastFrame != 3 && player.frame == 3)
-                Shoot(player.x, 0, player.z, player.lookAngle, game);
+                Shoot(player.x, 0, player.z, player.lookAngle + ((float)rand() / RAND_MAX) * 0.02f - 0.01f, game);
 
             player.lastFrame = player.frame;
         }
@@ -510,6 +535,7 @@ void Init(Game& game)
     game.paintingTexture = LoadTexture("textures/painting1.png");
     game.paintingHitTexture = LoadTexture("textures/painting1_hit.png");
     game.bulletImpactTexture = LoadTexture("textures/bulletimpact.png");
+    game.tracerTexture = LoadTexture("textures/tracer.png");
 
     game.gunMesh = CreatePlaneMesh();
     game.enemyMesh = CreatePlaneMesh();
@@ -625,6 +651,19 @@ void Update(Game& game, float dt)
 
     for(int i = 0; i < GAME_MAX_BULLET_IMPACTS; ++i)
         game.impacts[i].life -= dt;
+
+    for(int i = 0; i < GAME_MAX_TRACERS; ++i)
+    {
+        if(game.tracers[i].life <= 0) continue;
+
+        float mx = sinf(game.tracers[i].shotAngle) * TRACER_MOVE_SPEED * dt;
+        float mz = cosf(game.tracers[i].shotAngle) * TRACER_MOVE_SPEED * dt;
+
+        game.tracers[i].x += mx;
+        game.tracers[i].z += mz;
+
+        game.tracers[i].life -= dt;
+    }
 }
 
 void Draw(const Game& game, const glm::mat4& proj)
@@ -715,9 +754,34 @@ void Draw(const Game& game, const glm::mat4& proj)
     {
         if(game.impacts[i].life <= 0) continue;
 
-        glm::mat4 rot = glm::rotate(glm::radians(game.impacts[i].dir * 90.0f), glm::vec3(0, 1, 0));
+        glm::mat4 rot = glm::rotate(glm::radians(game.impacts[i].dir * 90.0f), glm::vec3(0, 1, 0)) * glm::translate(glm::vec3(-0.070f, -0.070f, 0));
 
         glm::mat4 model = glm::translate(glm::vec3(game.impacts[i].x, game.impacts[i].y, game.impacts[i].z)) * rot;
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+        Draw(game.planeMesh);
+    }
+
+    // Draw tracers
+    glBindTexture(GL_TEXTURE_2D, game.tracerTexture.id);
+    
+    for(int i = 0; i < GAME_MAX_TRACERS; ++i)
+    {
+        if(game.tracers[i].life <= 0) continue;
+
+        glm::mat4 rot = glm::rotate(game.tracers[i].shotAngle, glm::vec3(0, 1, 0)) * glm::rotate(glm::radians(90.0f), glm::vec3(1, 0, 0)) * glm::translate(glm::vec3(-0.01f, 0, 0));
+
+        glm::mat4 trans = glm::translate(glm::vec3(game.tracers[i].x, game.tracers[i].y, game.tracers[i].z));
+
+        glm::mat4 model = trans * rot;
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+        Draw(game.planeMesh);
+        
+        // Draw it twice (once again rotated 90 degrees in local z)
+        rot = glm::rotate(game.tracers[i].shotAngle, glm::vec3(0, 1, 0)) * glm::rotate(glm::radians(90.0f), glm::vec3(0, 0, 1)) * glm::rotate(glm::radians(90.0f), glm::vec3(1, 0, 0)) * glm::translate(glm::vec3(-0.01f, 0, 0));
+
+        model = trans * rot;
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
         Draw(game.planeMesh);
@@ -747,7 +811,7 @@ void Draw(const Game& game, const glm::mat4& proj)
 #endif
 
     // Draw player gun
-    float x, z;
+    float x = 0, y = 0, z = 0;
     Forward(game.player.lookAngle, x, z, 1.2f);
 
     // Get the right vector (which is used to bob the gun across)
@@ -756,11 +820,13 @@ void Draw(const Game& game, const glm::mat4& proj)
 
     float t = sinf(game.player.stride / 2.0f);
 
-    x += rx * t * 0.02f;
-    z += rz * t * 0.02f;
-    float y = sinf(game.player.stride) * 0.01f - 0.01f;
-    
-    float tilt = sinf(game.player.stride) * 1.4f;
+    // If the player isn't shooting (cause the gun must be positioned correctly)
+    if(!game.player.shoot)
+    {
+        x += rx * t * 0.02f;
+        z += rz * t * 0.02f;
+        y = sinf(game.player.stride) * 0.01f - 0.01f;
+    }
 
     model = glm::translate(glm::vec3(game.player.x + x, game.player.y + y, game.player.z + z)) * glm::scale(glm::vec3(0.5f, 0.5f, 0.5f)) * glm::rotate(game.player.lookAngle, glm::vec3(0.0f, 1.0f, 0.0f));
     glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));

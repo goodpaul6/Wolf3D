@@ -4,6 +4,7 @@
 #include "resources.hpp"
 
 static const int GAME_MAX_BULLET_IMPACTS = 64;
+static const int GAME_MAX_TRACERS = 32;
 
 struct Entity
 {
@@ -52,6 +53,12 @@ struct Painting : public Entity
     bool hit = false;
 };
 
+struct Tracer : public Entity
+{
+    float life = 0;
+    float shotAngle = 0;
+};
+
 struct Impact : public Entity
 {
     float life = 0;
@@ -72,6 +79,7 @@ struct Game
     Painting* paintings = nullptr;
     
     Impact impacts[GAME_MAX_BULLET_IMPACTS];
+    Tracer tracers[GAME_MAX_TRACERS];
     
     Level level;
 
@@ -91,6 +99,7 @@ struct Game
     Texture paintingTexture;
     Texture paintingHitTexture;
     Texture bulletImpactTexture;
+    Texture tracerTexture;
 
     Shader basicShader;
 };
