@@ -77,6 +77,10 @@ struct Game
 
     int paintingCount = 0;
     Painting* paintings = nullptr;
+
+    // Just a bunch of bounding boxes
+    int boxColliderCount = 0;
+    Entity* boxColliders = nullptr;
     
     Impact impacts[GAME_MAX_BULLET_IMPACTS];
     Tracer tracers[GAME_MAX_TRACERS];

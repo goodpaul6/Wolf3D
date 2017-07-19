@@ -19,7 +19,6 @@
 //   impacts are created. Otherwise, we just get the ray bounds and use
 //   LevelHasTile()
 
-static const float LEVEL_SCALE_FACTOR = 2;
 static const int LEVEL_RAY_SAMPLE_COUNT = 100;
 static const float PLAYER_DOOR_OPEN_DIST = 2.5f;
 static const float DOOR_OPEN_SPEED = 1.5f;
@@ -110,7 +109,7 @@ static void CreateTracer(Game& game, float x, float y, float z, float angle)
 }
 
 // Assumes direction is normalized
-static bool RayBox(const glm::vec3& start, const glm::vec3& dir, const glm::vec3& pos, const glm::vec3& min, const glm::vec3& max)
+static bool RayBox(const glm::vec3& start, const glm::vec3& dir, const glm::vec3& pos, const glm::vec3& min, const glm::vec3& max, glm::vec3* hit = nullptr)
 {
     glm::vec3 c = (min + max) / 2.0f + pos;
 
@@ -126,13 +125,24 @@ static bool RayBox(const glm::vec3& start, const glm::vec3& dir, const glm::vec3
     glm::vec3 clampedDiff = glm::clamp(pdiff, min, max);
 
     if(glm::length2(clampedDiff) >= glm::length2(pdiff))
+    {
+        if(hit)
+        {
+            // TODO: Implement properly
+            *hit = start + dir * (dot / 2);
+        }
+
         return true;
+    }
 
     return false;
 }
 
+// TODO: Get rid of level tile stuff
 static bool LevelHasTile(const Level& level, int left, int top, int right, int bottom)
 {
+    return false;
+#if 0
     for(int zz = top; zz <= bottom; ++zz)
     {
         if(zz < 0) continue;
@@ -149,11 +159,15 @@ static bool LevelHasTile(const Level& level, int left, int top, int right, int b
     }
 
     return false;
+#endif
 }
 
 // origin = origin of the ray, delta = offset from the origin to the target
 static bool RayLevel(const glm::vec2& origin, const glm::vec2& delta, const Level& level, glm::vec2& hit, int& dir)
 {
+    return false;
+// TODO: Check against plane based geometry
+#if 0
     // Advance from origin sample count times and check if a wall was hit or
     // we go out of bounds
     for(int i = 0; i < LEVEL_RAY_SAMPLE_COUNT; ++i)
@@ -191,6 +205,7 @@ static bool RayLevel(const glm::vec2& origin, const glm::vec2& delta, const Leve
     }
     
     return false;
+#endif
 }
 
 static bool CheckShot(float x, float y, float z, float angle, const Entity& target, Game& game)
@@ -198,12 +213,6 @@ static bool CheckShot(float x, float y, float z, float angle, const Entity& targ
     glm::vec3 start{x, y, z};
     glm::vec3 dir{sinf(angle), 0, cosf(angle)}; 
     
-    // Check to see if level is in the way of the enemy
-    glm::vec2 hit;
-    int d;
-    if(RayLevel(glm::vec2(start.x, start.z), glm::vec2(target.x - start.x, target.z - start.z), game.level, hit, d))
-        return false;
-
     // TODO: Think of a more optimal solution than checking every door
     // Check to see if there are any doors in the way
     for(int i = 0; i < game.doorCount; ++i)
@@ -218,6 +227,14 @@ static bool CheckShot(float x, float y, float z, float angle, const Entity& targ
 
         // Check for ray collision with the door
         if(RayBox(start, dir, glm::vec3(door.x, door.y, door.z), door.min, door.max))
+            return false;
+    }
+
+    for(int i = 0; i < game.boxColliderCount; ++i)
+    {
+        const Entity& box = game.boxColliders[i];
+
+        if(RayBox(glm::vec3(x, y, z), glm::vec3(sinf(angle), 0, cosf(angle)), glm::vec3(box.x, box.y, box.z), box.min, box.max))
             return false;
     }
 
@@ -264,12 +281,18 @@ static void Shoot(float x, float y, float z, float angle, Game& game)
         }
     }
 
-    glm::vec2 delta(sinf(angle) * 20, cosf(angle) * 20);
+    // TODO: Check if doors and stuff are in the way and only then generate impacts
+    or(int i = 0; i < game.boxColliderCount; ++i)
+    {
+        const Entity& box = game.boxColliders[i];
 
-    glm::vec2 hit;
-    int dir;
-    if(RayLevel(glm::vec2(x, z), delta, game.level, hit, dir))
-        CreateImpact(game, hit.x, ((float)rand() / RAND_MAX) * 0.2f - 0.1f, hit.y, dir);
+        glm::vec3 hit;
+        if(RayBox(glm::vec3(x, y, z), glm::vec3(sinf(angle), 0, cosf(angle)), glm::vec3(box.x, box.y, box.z), box.min, box.max, &hit))
+        {
+            int dir = VecToDir(x - hit.x, z - hit.z);
+            CreateImpact(game, hit.x, hit.y, hit.z, dir);
+        }
+    }
 }
 
 static bool Collide(const Entity& e, float x, float z, const Level& level)
@@ -307,18 +330,13 @@ static bool Collide(const Entity& a, float x, float y, float z, const Entity& b)
     return true;
 }
 
-static void MoveBy(Entity& e, float x, float z, const Level& level)
-{
-    if(!Collide(e, e.x + x, e.z, level))
-        e.x += x;
-    if(!Collide(e, e.x, e.z + z, level))
-        e.z += z;
-}
-
 static bool CollideSolids(const Entity& e, float x, float y, float z, const Game& game)
 {
-    if(Collide(e, x, z, game.level))
-        return true;
+    for(int i = 0; i < game.boxColliderCount; ++i)
+    {
+        if(Collide(e, x, y, z, game.boxColliders[i]))
+            return true;
+    }
 
     for(int i = 0; i < game.doorCount; ++i)
     {
@@ -528,6 +546,13 @@ void Init(Game& game)
     game.basicShader = LoadShader("shaders/basic.vert", "shaders/basic.frag");
 
     game.levelTexture = LoadTexture("textures/wolf.png");
+    
+    // FIXME: This is technically redundant 
+    glBindTexture(GL_TEXTURE_2D, game.levelTexture.id);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
     game.doorTexture = LoadTexture("textures/door.png");
     game.gunTexture = LoadTexture("textures/pistol.png");
     game.enemyTexture = LoadTexture("textures/guard.png");
@@ -633,6 +658,23 @@ void Init(Game& game)
             painting.min = glm::vec3(-1, -0.3f, -0.3f);
             painting.max = glm::vec3(1, 0.3f, 0.3f);
         }
+    }
+
+    game.boxColliderCount = game.level.entityCount[ET_BOXCOLLIDER];
+    game.boxColliders = new Entity[game.boxColliderCount];
+
+    for(int i = 0; i < game.boxColliderCount; ++i)
+    {
+        const EntityInfo& info = game.level.entities[ET_BOXCOLLIDER][i];
+        Entity& box = game.boxColliders[i];
+
+        box.x = info.x;
+        box.y = info.y;
+        box.z = info.z;
+
+        box.hasbb = true;
+        box.min = glm::vec3(info.minx, info.miny, info.minz);
+        box.max = glm::vec3(info.maxx, info.maxy, info.maxz);
     }
 }
 
@@ -845,6 +887,7 @@ void Destroy(Game& game)
     delete game.doors;
     delete game.enemies;
     delete game.paintings;
+    delete game.boxColliders;
 
     DestroyLevel(game.level);
 

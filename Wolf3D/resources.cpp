@@ -228,27 +228,24 @@ Level LoadLevel(const char* filename)
     if(!file)
         CRASH("Failed to open level file '%s'\n", filename);
 
-    int w, h;    
-    fscanf(file, "%d %d", &w, &h);
-
-	int* tiles = (int*)malloc(sizeof(int) * w * h);
-
-    for(int y = 0; y < h; ++y)
-    {
-        for(int x = 0; x < w; ++x)
-        {
-            int tile;
-            fscanf(file, "%d", &tile);
-
-            tiles[x + y * w] = tile;
-        }
-    }
-
     Level level;
 
-    level.tiles = tiles;
-    level.width = w;
-    level.height = h;
+    fscanf(file, "%d %d", &level.edgeCount, &level.connectionCount);
+
+    level.edges = (Level::Edge*)malloc(sizeof(Level::Edge) * level.edgeCount);
+    level.connections = (Level::Connection*)malloc(sizeof(Level::Connection) * level.connectionCount);
+
+    for(int i = 0; i < level.edgeCount; ++i)
+    {
+        Level::Edge& edge = level.edges[i];
+        fscanf(file, "%d %d %d %d %d", &edge.x1, &edge.z1, &edge.x2, &edge.z2, &edge.y);
+    }
+
+    for(int i = 0; i < level.connectionCount; ++i)
+    {
+        Level::Connection& con = level.connections[i];
+        fscanf(file, "%d %d %d", &con.e1, &con.e2, &con.tile);
+    }
 
     for(int i = 0; i < ET_COUNT; ++i)
         fscanf(file, "%d", &level.entityCount[i]);
@@ -279,6 +276,12 @@ Level LoadLevel(const char* filename)
                     fscanf(file, "%d", &info.health);
                     fscanf(file, "%f", &info.speed);
                 } break;
+
+                case ET_BOXCOLLIDER:
+                {
+                    fscanf(file, "%f %f %f %f %f %f", &info.minx, &info.miny, &info.minz,
+                                                      &info.maxx, &info.maxy, &info.maxz);
+                } break;
             }
         }
     }
@@ -288,7 +291,9 @@ Level LoadLevel(const char* filename)
 
 void DestroyLevel(Level& level)
 {
-    free(level.tiles);
+    free(level.edges);
+    free(level.connections);
+
     for(int i = 0; i < ET_COUNT; ++i)
         free(level.entities[i]);
 }

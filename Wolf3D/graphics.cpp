@@ -84,94 +84,60 @@ Mesh CreatePlaneMesh(float u1, float v1, float u2, float v2)
 Mesh CreateLevelMesh(const Level& level, const Texture& texture)
 {
     int vertexCount = 0;
-    Vertex* vertices = (Vertex*)malloc(sizeof(Vertex) * 16 * level.width * level.height); 
+    Vertex* vertices = (Vertex*)malloc(sizeof(Vertex) * 2 * level.edgeCount); 
     
     int indexCount = 0;
-	ushort* indices = (ushort*)malloc(sizeof(ushort) * 36 * level.width * level.height);
+	ushort* indices = (ushort*)malloc(sizeof(ushort) * 6 * level.connectionCount);
 
-#define PUSH_FLOOR(x, y, z, u1, v1, u2, v2) do { \
-    float xx = (float)(x) * 2; \
-    float yy = (float)(y) * 2; \
-    float zz = (float)(z) * 2; \
-    vertices[vertexCount++] = { (float)xx, yy, (float)zz, (float)(u1), (float)(v1) }; \
-    vertices[vertexCount++] = { (float)xx + 2, yy, (float)zz, (float)(u2), (float)(v1) }; \
-    vertices[vertexCount++] = { (float)xx + 2, yy, (float)zz + 2, (float)(u2), (float)(v2) }; \
-    vertices[vertexCount++] = { (float)xx, yy, (float)zz + 2, (float)(u1), (float)(v2) }; \
-	ushort i = vertexCount - 4; \
-    indices[indexCount++] = i; \
-    indices[indexCount++] = i + 1; \
-    indices[indexCount++] = i + 2; \
-    indices[indexCount++] = i + 2; \
-    indices[indexCount++] = i + 3; \
-    indices[indexCount++] = i; \
-} while(0)
-
-#define PUSH_WALL_Z(x, z, u1, v1, u2, v2) do { \
-    float xx = (float)(x) * 2; \
-    float zz = (float)(z) * 2; \
-    vertices[vertexCount++] = { (float)xx, 0.0f, (float)zz, (float)(u1), (float)(v1) }; \
-    vertices[vertexCount++] = { (float)xx, 2.0f, (float)zz, (float)(u1), (float)(v2) }; \
-    vertices[vertexCount++] = { (float)xx + 2, 2.0f, (float)zz, (float)(u2), (float)(v2) }; \
-    vertices[vertexCount++] = { (float)xx + 2, 0.0f, (float)zz, (float)(u2), (float)(v1) }; \
-    ushort i = vertexCount - 4; \
-    indices[indexCount++] = i + 3; \
-    indices[indexCount++] = i + 2; \
-    indices[indexCount++] = i + 1; \
-    indices[indexCount++] = i + 1; \
-    indices[indexCount++] = i + 0; \
-    indices[indexCount++] = i + 3; \
-} while(0)
-
-#define PUSH_WALL_X(x, z, u1, v1, u2, v2) do { \
-    float xx = (float)(x) * 2; \
-    float zz = (float)(z) * 2; \
-    vertices[vertexCount++] = { (float)xx, 0.0f, (float)zz, (float)(u1), (float)(v1) }; \
-    vertices[vertexCount++] = { (float)xx, 2.0f, (float)zz, (float)(u1), (float)(v2) }; \
-    vertices[vertexCount++] = { (float)xx, 2.0f, (float)zz + 2, (float)(u2), (float)(v2) }; \
-    vertices[vertexCount++] = { (float)xx, 0.0f, (float)zz + 2, (float)(u2), (float)(v1) }; \
-    ushort i = vertexCount - 4; \
-    indices[indexCount++] = i + 0; \
-    indices[indexCount++] = i + 1; \
-    indices[indexCount++] = i + 2; \
-    indices[indexCount++] = i + 2; \
-    indices[indexCount++] = i + 3; \
-    indices[indexCount++] = i + 0; \
-} while(0)
-
-    for(int z = 0; z < level.height; ++z)
+    for(int i = 0; i < level.connectionCount; ++i)
     {
-        for(int x = 0; x < level.width; ++x)
+        const Level::Connection& con = level.connections[i];
+        const Level::Edge& e1 = level.edges[con.e1];
+        const Level::Edge& e2 = level.edges[con.e2];
+
+	    float x1 = e1.x1 * LEVEL_SCALE_FACTOR;
+        float z1 = e1.z1 * LEVEL_SCALE_FACTOR;
+
+        float x2 = e1.x2 * LEVEL_SCALE_FACTOR;
+        float z2 = e1.z2 * LEVEL_SCALE_FACTOR;
+
+        float x4 = e2.x1 * LEVEL_SCALE_FACTOR;
+        float z4 = e2.z1 * LEVEL_SCALE_FACTOR;
+
+        float x3 = e2.x2 * LEVEL_SCALE_FACTOR;
+        float z3 = e2.z2 * LEVEL_SCALE_FACTOR;
+
+        float y1 = e1.y * LEVEL_SCALE_FACTOR;
+        float y2 = e2.y * LEVEL_SCALE_FACTOR;
+
+        float u1, v1, u2, v2;
+        GetTileUV(texture, con.tile, u1, v1, u2, v2);
+
+        const Vertex verts[] =
         {
-            int tile = level.tiles[x + z * level.width];
-            
-            float u1, v1, u2, v2;
-            GetTileUV(texture, tile, u1, v1, u2, v2);
-            
-            if(tile > 0)
-            {
-				PUSH_WALL_X(x, z, u1, v1, u2, v2);
-				PUSH_WALL_X(x + 1, z, u1, v1, u2, v2);
-                PUSH_WALL_Z(x, z, u1, v1, u2, v2);
-				PUSH_WALL_Z(x, z + 1, u1, v1, u2, v2);
-            }
-            else
-            {
-                PUSH_FLOOR(x, 0, z, u1, v1, u2, v2);
+            { x1, y1, z1, u1, v1 },
+            { x2, y1, z2, u2, v1 },
+            { x3, y2, z3, u2, v2 },
+            { x4, y2, z4, u1, v2 }
+        };
 
-                // Recalculate uv's for ceiling tile
-                tile = 108;
-				GetTileUV(texture, tile, u1, v1, u2, v2);
-                PUSH_FLOOR(x, 1, z, u1, v1, u2, v2);
-            }
-        }
+		ushort idx = (ushort)vertexCount;
+
+        memcpy((void*)&vertices[vertexCount], verts, sizeof(verts));
+        vertexCount += COUNT_OF(verts);
+
+        const ushort ind[] =
+        {
+            idx, idx + 1, idx + 2,
+            idx + 2, idx + 3, idx
+        };
+
+        memcpy((void*)&indices[indexCount], ind, sizeof(ind));
+        indexCount += COUNT_OF(ind);
     }
-
-#undef PUSH_FLOOR
-#undef PUSH_WALL_Z
-#undef PUSH_WALL_X
-
+    
     Mesh mesh = CreateMesh(vertexCount, vertices, indexCount, indices);
-
+    
     free(vertices);
     free(indices);
 
