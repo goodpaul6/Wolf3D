@@ -84,41 +84,45 @@ Mesh CreatePlaneMesh(float u1, float v1, float u2, float v2)
 Mesh CreateLevelMesh(const Level& level, const Texture& texture)
 {
     int vertexCount = 0;
-    Vertex* vertices = (Vertex*)malloc(sizeof(Vertex) * 2 * level.edgeCount); 
+    Vertex* vertices = (Vertex*)malloc(sizeof(Vertex) * 4 * level.planeCount); 
     
     int indexCount = 0;
-	ushort* indices = (ushort*)malloc(sizeof(ushort) * 6 * level.connectionCount);
+	ushort* indices = (ushort*)malloc(sizeof(ushort) * 6 * level.planeCount);
 
-    for(int i = 0; i < level.connectionCount; ++i)
+    for(int i = 0; i < level.planeCount; ++i)
     {
-        const Level::Connection& con = level.connections[i];
-        const Level::Edge& e1 = level.edges[con.e1];
-        const Level::Edge& e2 = level.edges[con.e2];
+        const Level::Plane& plane = level.planes[i];
 
-	    float x1 = e1.x1 * LEVEL_SCALE_FACTOR;
-        float z1 = e1.z1 * LEVEL_SCALE_FACTOR;
+        int oa[3] = { plane.a[0] - plane.o[0], plane.a[1] - plane.o[1], plane.a[2] - plane.o[2] };
+        int c[3] = { plane.b[0] - oa[0], plane.b[1] - oa[1], plane.b[2] - oa[2] };
 
-        float x2 = e1.x2 * LEVEL_SCALE_FACTOR;
-        float z2 = e1.z2 * LEVEL_SCALE_FACTOR;
+        const float size = LEVEL_SCALE_FACTOR / 2.0f;
+    
+        float x1 = plane.o[0] * size;
+        float y1 = plane.o[1] * size;
+        float z1 = plane.o[2] * size;
 
-        float x4 = e2.x1 * LEVEL_SCALE_FACTOR;
-        float z4 = e2.z1 * LEVEL_SCALE_FACTOR;
+        float x2 = plane.a[0] * size;
+        float y2 = plane.a[1] * size;
+        float z2 = plane.a[2] * size;
+        
+        float x3 = plane.b[0] * size;
+        float y3 = plane.b[1] * size;
+        float z3 = plane.b[2] * size;
 
-        float x3 = e2.x2 * LEVEL_SCALE_FACTOR;
-        float z3 = e2.z2 * LEVEL_SCALE_FACTOR;
-
-        float y1 = e1.y * LEVEL_SCALE_FACTOR;
-        float y2 = e2.y * LEVEL_SCALE_FACTOR;
-
+        float x4 = c[0] * size;
+        float y4 = c[1] * size;
+        float z4 = c[2] * size;
+        
         float u1, v1, u2, v2;
-        GetTileUV(texture, con.tile, u1, v1, u2, v2);
+        GetTileUV(texture, plane.tile, u1, v1, u2, v2);
 
         const Vertex verts[] =
         {
             { x1, y1, z1, u1, v1 },
-            { x2, y1, z2, u2, v1 },
-            { x3, y2, z3, u2, v2 },
-            { x4, y2, z4, u1, v2 }
+            { x2, y2, z2, u2, v1 },
+            { x3, y3, z3, u2, v2 },
+            { x4, y4, z4, u1, v2 }
         };
 
 		ushort idx = (ushort)vertexCount;

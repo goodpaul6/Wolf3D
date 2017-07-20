@@ -230,21 +230,17 @@ Level LoadLevel(const char* filename)
 
     Level level;
 
-    fscanf(file, "%d %d", &level.edgeCount, &level.connectionCount);
+    fscanf(file, "%d", &level.planeCount);
 
-    level.edges = (Level::Edge*)malloc(sizeof(Level::Edge) * level.edgeCount);
-    level.connections = (Level::Connection*)malloc(sizeof(Level::Connection) * level.connectionCount);
+    level.planes = (Level::Plane*)malloc(sizeof(Level::Plane) * level.planeCount);
 
-    for(int i = 0; i < level.edgeCount; ++i)
+    for(int i = 0; i < level.planeCount; ++i)
     {
-        Level::Edge& edge = level.edges[i];
-        fscanf(file, "%d %d %d %d %d", &edge.x1, &edge.z1, &edge.x2, &edge.z2, &edge.y);
-    }
-
-    for(int i = 0; i < level.connectionCount; ++i)
-    {
-        Level::Connection& con = level.connections[i];
-        fscanf(file, "%d %d %d", &con.e1, &con.e2, &con.tile);
+        Level::Plane& plane = level.planes[i];
+        fscanf(file, "%d %d %d %d %d %d %d %d %d %d", &plane.o[0], &plane.o[1], &plane.o[2],
+                                                      &plane.a[0], &plane.a[1], &plane.a[2],
+                                                      &plane.b[0], &plane.b[1], &plane.b[2],
+                                                      &plane.tile);
     }
 
     for(int i = 0; i < ET_COUNT; ++i)
@@ -291,8 +287,7 @@ Level LoadLevel(const char* filename)
 
 void DestroyLevel(Level& level)
 {
-    free(level.edges);
-    free(level.connections);
+    free(level.planes);
 
     for(int i = 0; i < ET_COUNT; ++i)
         free(level.entities[i]);

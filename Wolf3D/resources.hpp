@@ -54,34 +54,30 @@ struct EntityInfo
 
 struct Level
 {
-    struct Edge
+    struct Plane
     {
-        // Edge vertices in grid coordinates
-        int x1, z1;
-        int x2, z2;
-        // Edges cannot be oriented (just 
-        // create two edges at different y
-        // positions and connect them)
-        int y;
+        // All of these are in half-grid coordinates (LEVEL_SCALE_FACTOR / 2)
+        // o = origin 
+        // a = first plane vertex
+        // b = second plane vertex
+        // 
+        //  o         a
+        //  *---------*
+        //  |         |
+        //  |         |
+        //  |         |
+        //  *---------* b
+        //  b-(a-o)
+        int o[3], a[3], b[3];
+        int tile;
     };
 
-    struct Connection
-    {
-        // Edge 1, Edge 2
-        int e1, e2;
-        // Tile to use for this connection
-        int tile; 
-    };
-
-    int edgeCount;
-    Edge* edges;
-
-    int connectionCount;
-    Connection* connections;
+    int planeCount = 0;
+    Plane* planes = nullptr;
 
     // Number of entities of each type
-    int entityCount[ET_COUNT]; 
-    EntityInfo* entities[ET_COUNT];
+    int entityCount[ET_COUNT] = {0};
+    EntityInfo* entities[ET_COUNT] = {0};
 };
 
 Texture LoadTexture(const char* filename);

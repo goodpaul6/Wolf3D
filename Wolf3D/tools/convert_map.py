@@ -35,63 +35,65 @@ def read_tiles_and_ents(filename):
 
 def create_box_collider_ents(tiles):
     entities = []
-    # naively creates a collider for each solid tile
-    y = 0
-    for row in tiles:
-        x = 0
-        for tile in row:
-            if tile > 0:
-                # TODO: Don't hardcode level scaling factor (2) here
-                entities.append((ENT_TO_TYPE["bc"], x * 2 + 1, 0, y * 2 + 1, -1, -1, -1, 1, 1, 1))
-            x += 1
-        y += 1
+    solid = [[False for tile in row] for row in tiles]
+
+    x, y = (0, 0)
+
+    def add_box(x, y, w, h):
+        print("Adding box", x, y, w, h)
+        entities.append((ENT_TO_TYPE["bc"], x * 2 + (w / 2) * 2, 0, y * 2 + (h / 2) * 2, (-w / 2) * 2, -1, (-h / 2) * 2, (w / 2) * 2, 1, (h / 2) * 2))
+        for ty in range(y, y + h):
+            for tx in range(x, x + w):
+                solid[ty][tx] = True
+
+    while y < len(tiles):
+        # if this is a solid tile and there is no bounding box here
+        # scan for the longest solid consecutive bounds possible
+        if not solid[y][x] and tiles[y][x] > 0:
+            xx, yy = (x + 1, y + 1)
+
+            while yy < len(tiles) and tiles[yy][x] > 0: yy += 1
+            while xx < len(tiles[y]) and tiles[y][xx] > 0: xx += 1
+
+            row_length, col_length = (xx - x, yy - y)
+
+            # longer as a row
+            if row_length > col_length:
+                add_box(x, y, row_length, 1)
+            else:
+                add_box(x, y, 1, col_length)
+        x += 1
+        if x >= len(tiles[y]):
+            x = 0
+            y += 1
+
+    print("Total number of tiles:", len(tiles) * len(tiles[0]))
+    print("Total number of boxes:", len(entities))
+
     return entities
 
-def create_edges_and_connections(tiles):
-    edges = []
-    connections = []
+def create_planes(tiles, scale = 2):
+    planes = []
 
-    # naively creates edges for each tile
+    # naively creates planes for each tile
     # and connects them
     y = 0
     for row in tiles: 
         x = 0
         for tile in row:
-            if tile == 0:
-                edges.append((x, y, x, y + 1, 0))
-                edges.append((x + 1, y, x + 1, y + 1, 0)) 
-                connections.append((len(edges) - 2, len(edges) - 1, tile))
-            else:
-                edges.append((x, y, x, y + 1, 0))
-                edges.append((x, y, x, y + 1, 1))
-                connections.append((len(edges) - 2, len(edges) - 1, tile))
-
-                edges.append((x, y + 1, x + 1, y + 1, 0))
-                edges.append((x, y + 1, x + 1, y + 1, 1))
-                connections.append((len(edges) - 2, len(edges) - 1, tile))
-                
-                edges.append((x + 1, y + 1, x + 1, y, 0))
-                edges.append((x + 1, y + 1, x + 1, y, 1))
-                connections.append((len(edges) - 2, len(edges) - 1, tile))
-
-                edges.append((x + 1, y, x, y, 0))
-                edges.append((x + 1, y, x, y, 1))
-                connections.append((len(edges) - 2, len(edges) - 1, tile))
-            # ceiling
-            edges.append((x, y, x, y + 1, 1))
-            edges.append((x + 1, y, x + 1, y + 1, 1))
-            connections.append((len(edges) - 2, len(edges) - 1, CEILING_TILE))
+            # TODO: ceilings, walls
+            xx = x * scale
+            yy = y * scale
+            planes.append((xx, 0, yy, xx + scale, 0, yy, xx + scale, 0, yy + scale, tile))
             x += 1
         y += 1 
-    return (edges, connections)
+    return planes
 
-def save(edges, connections, entities, filename):
+def save(planes, entities, filename):
     with open(filename, "w") as f:
-        f.write("{} {}\n".format(len(edges), len(connections)))
-        for edge in edges:
-            f.write("{} {} {} {} {}\n".format(edge[0], edge[1], edge[2], edge[3], edge[4]))
-        for con in connections:
-            f.write("{} {} {}\n".format(con[0], con[1], con[2])) 
+        f.write("{}\n".format(len(planes)))
+        for plane in planes:
+            f.write(" ".join(map(str, plane)) + "\n")
 
         counts = {t: 0 for t in ENT_TO_TYPE.values()}
         
@@ -116,9 +118,9 @@ def main():
         sys.exit(0)
 
     tiles, ents = read_tiles_and_ents(sys.argv[1])
-    edges, connections = create_edges_and_connections(tiles)
+    planes = create_planes(tiles)
     ents += create_box_collider_ents(tiles)
-    save(edges, connections, ents, sys.argv[2])
+    save(planes, ents, sys.argv[2])
 
 if __name__ == "__main__":
     main()

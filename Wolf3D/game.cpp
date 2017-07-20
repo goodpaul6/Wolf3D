@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtx/norm.hpp>
 #include <glm/gtx/transform.hpp>
@@ -19,7 +20,8 @@
 //   impacts are created. Otherwise, we just get the ray bounds and use
 //   LevelHasTile()
 
-static const int LEVEL_RAY_SAMPLE_COUNT = 100;
+static const int RAY_BOX_HIT_SAMPLE_COUNT = 20;
+static const int MAX_SHOT_LEVEL_INTERSECTIONS = 20;
 static const float PLAYER_DOOR_OPEN_DIST = 2.5f;
 static const float DOOR_OPEN_SPEED = 1.5f;
 static const float DOOR_OPEN_AMOUNT = 1.5f;
@@ -28,6 +30,31 @@ static const float IMPACT_LIFE = 1.5f;
 static const float TRACER_MOVE_SPEED = 60.0f;
 static const float TRACER_Y_OFF = -0.2f;
 static const float TRACER_LIFE = 1.0f;
+
+static bool LinePlane(const glm::vec3& lineStart, const glm::vec3& lineEnd, const glm::vec3& planeOrigin, const glm::vec3& planeNormal, glm::vec3* hit = nullptr)
+{
+    float startDistToPlane = glm::dot((lineStart - planeOrigin), planeNormal);
+    float projLength = glm::dot((lineStart - lineEnd), planeNormal);
+    float scale = startDistToPlane / projLength;
+
+    // The starting distance is negative (behind the plane) and 
+    // the endpoint is also behind the plane
+    if(scale < 0)
+        return false;
+
+    // The distance from the start of the line to the plane is longer than
+    // the length of the line
+    if(scale > 1.0f)
+        return false;
+
+    return true;
+}
+
+static glm::vec3 Center(const Entity& a)
+{
+    if(!a.hasbb) return glm::vec3(a.x, a.y, a.z);
+    return (glm::vec3(a.x, a.y, a.z) * 2.0f + a.min + a.max) / 2.0f;
+}
 
 static float Dist2(const Entity& a, const Entity& b)
 {
@@ -108,9 +135,52 @@ static void CreateTracer(Game& game, float x, float y, float z, float angle)
     }
 }
 
+static bool PointInBox(const glm::vec3& p, const glm::vec3& pos, const glm::vec3& min, const glm::vec3& max)
+{
+    glm::vec3 pmin = pos + min;
+    glm::vec3 pmax = pos + max;
+
+    return p.x > pmin.x && p.x < pmax.x &&
+           p.y > pmin.y && p.y < pmax.y &&
+           p.z > pmin.z && p.z < pmax.z;
+}
+
 // Assumes direction is normalized
 static bool RayBox(const glm::vec3& start, const glm::vec3& dir, const glm::vec3& pos, const glm::vec3& min, const glm::vec3& max, glm::vec3* hit = nullptr)
 {
+#if 0
+    float lowProj = -FLT_MAX;
+    float highProj = FLT_MAX;
+
+    for(int i = 0; i < 3; ++i)
+    {
+        float minProj = ((pos[i] + min[i]) - start[i]) / dir[i];
+        float maxProj = ((pos[i] + max[i]) - start[i]) / dir[i];
+
+        if(minProj > maxProj)
+        {
+            float tmp = minProj;
+            maxProj = minProj;
+            minProj = tmp;
+        }
+
+        if(maxProj < lowProj || minProj > highProj)
+            return false;
+
+        if(minProj > lowProj) lowProj = minProj;
+        if(maxProj < highProj) highProj = maxProj;
+    }
+
+    bool result = lowProj > highProj ? false : true;
+
+    if(result && hit)
+    {
+        *hit = start + dir * lowProj;
+        return true;
+    }
+
+    return result;
+#else 
     glm::vec3 c = (min + max) / 2.0f + pos;
 
     glm::vec3 diff = c - start;
@@ -129,13 +199,30 @@ static bool RayBox(const glm::vec3& start, const glm::vec3& dir, const glm::vec3
         if(hit)
         {
             // TODO: Implement properly
-            *hit = start + dir * (dot / 2);
+
+            // Linearly step from the the start and the perpendicular length point p
+            // until you hit the wall, move back and call that the hit location
+            const float tmove = dot / RAY_BOX_HIT_SAMPLE_COUNT;
+            float t = 0;
+
+            glm::vec3 pt;
+            for(int i = 0; i < RAY_BOX_HIT_SAMPLE_COUNT; ++i)
+			{
+				pt = start + dir * t;
+                t += tmove;
+
+				if (PointInBox(pt, pos, min, max))
+					break;
+            };
+
+            *hit = pt;
         }
 
         return true;
     }
 
     return false;
+#endif
 }
 
 // TODO: Get rid of level tile stuff
@@ -282,16 +369,49 @@ static void Shoot(float x, float y, float z, float angle, Game& game)
     }
 
     // TODO: Check if doors and stuff are in the way and only then generate impacts
-    or(int i = 0; i < game.boxColliderCount; ++i)
+
+    // Hit locations
+    int hitCount = 0;
+    static int boxIndices[MAX_SHOT_LEVEL_INTERSECTIONS];
+    static glm::vec3 hits[MAX_SHOT_LEVEL_INTERSECTIONS]; 
+    
+    for(int i = 0; i < game.boxColliderCount; ++i)
     {
+        if(hitCount >= MAX_SHOT_LEVEL_INTERSECTIONS)
+        {
+            //printf("Discarding %d hit checks.\n", game.boxColliderCount - (i + 1));
+            break;
+        }
+
         const Entity& box = game.boxColliders[i];
 
-        glm::vec3 hit;
-        if(RayBox(glm::vec3(x, y, z), glm::vec3(sinf(angle), 0, cosf(angle)), glm::vec3(box.x, box.y, box.z), box.min, box.max, &hit))
+        if(RayBox(glm::vec3(x, y, z), glm::vec3(sinf(angle), 0, cosf(angle)), glm::vec3(box.x, box.y, box.z), box.min, box.max, &hits[hitCount]))
         {
-            int dir = VecToDir(x - hit.x, z - hit.z);
-            CreateImpact(game, hit.x, hit.y, hit.z, dir);
+            boxIndices[hitCount] = i;
+            hitCount += 1;
         }
+    }
+
+    if(hitCount > 0)
+    {
+        int closestHit = 0;
+        float minHitDist2 = FLT_MAX;
+
+        for(int i = 0; i < hitCount; ++i)
+        {
+            float d2 = glm::length2(hits[i] - glm::vec3(x, y, z)); 
+            if(d2 < minHitDist2)
+            {
+                minHitDist2 = d2;
+                closestHit = i;
+            }
+        }
+
+        glm::vec3 hit = hits[closestHit];
+        glm::vec3 boxCenter = Center(game.boxColliders[boxIndices[closestHit]]);
+
+        int dir = VecToDir(hit.x - boxCenter.x, hit.z - boxCenter.z);
+        CreateImpact(game, hit.x, hit.y, hit.z, dir);
     }
 }
 
@@ -829,21 +949,22 @@ void Draw(const Game& game, const glm::mat4& proj)
         Draw(game.planeMesh);
     }
 
+#define DEBUG_DRAW
 #ifdef DEBUG_DRAW
-    // Draw bounding boxes
+    // Draw box colliders
     glBindTexture(GL_TEXTURE_2D, game.whiteTexture.id);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-	for (int i = 0; i < game.enemyCount; ++i)
+	for (int i = 0; i < game.boxColliderCount; ++i)
 	{
-        glm::vec3 min = game.enemies[i].min;
-        glm::vec3 max = game.enemies[i].max;
+        glm::vec3 min = game.boxColliders[i].min;
+        glm::vec3 max = game.boxColliders[i].max;
 
         glm::mat4 scale = glm::scale(glm::vec3(max.x - min.x,
                                                max.y - min.y,
                                                max.z - min.z));
         
-        glm::mat4 model = glm::translate(glm::vec3(game.enemies[i].x, game.enemies[i].y, game.enemies[i].z)) * scale;
+        glm::mat4 model = glm::translate(glm::vec3(game.boxColliders[i].x, game.boxColliders[i].y, game.boxColliders[i].z)) * scale;
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
         Draw(game.boxMesh);
