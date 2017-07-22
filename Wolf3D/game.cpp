@@ -9,24 +9,18 @@
 #include "input.hpp"
 #include "utils.hpp"
 
-// NOTES:
-// - Determining impact location can be generalized by clipping 
-//   the incident ray to the bounding box of the object that was
-//   hit (just like it is done in RayLevel)
-
 // TODO:
-// - RayLevel should only be called for precise hit location information
-//   and this should only be required at the end of Shoot() where bullet
-//   impacts are created. Otherwise, we just get the ray bounds and use
-//   LevelHasTile()
+// - Fix RayBox; it doesn't seem to be working in very specific cases where we check against boxColliders 
+//   tbh this might not be a RayBox problem but still
 
-static const int RAY_BOX_HIT_SAMPLE_COUNT = 20;
+static const int GAME_MAX_HIT_CHECK_ENTS = 20;
 static const int MAX_SHOT_LEVEL_INTERSECTIONS = 20;
 static const float PLAYER_DOOR_OPEN_DIST = 2.5f;
 static const float DOOR_OPEN_SPEED = 1.5f;
 static const float DOOR_OPEN_AMOUNT = 1.5f;
 static const float ENEMY_HIT_TIME = 1.5f;
-static const float IMPACT_LIFE = 1.5f;
+static const float IMPACT_LIFE = 10.0f;
+static const float IMPACT_HOVER_EPSILON = 0.1f;
 static const float TRACER_MOVE_SPEED = 60.0f;
 static const float TRACER_Y_OFF = -0.2f;
 static const float TRACER_LIFE = 1.0f;
@@ -111,8 +105,8 @@ static void CreateImpact(Game& game, float x, float y, float z, int dir)
             game.impacts[i].y = y;
             game.impacts[i].z = z;
             game.impacts[i].life = IMPACT_LIFE;
-            game.impacts[i].dir = dir;
 
+            game.impacts[i].dir = dir;
             return;
         }
     }
@@ -129,7 +123,6 @@ static void CreateTracer(Game& game, float x, float y, float z, float angle)
             game.tracers[i].z = z;
             game.tracers[i].life = TRACER_LIFE;
             game.tracers[i].shotAngle = angle;
-
             return;
         }
     }
@@ -146,40 +139,26 @@ static bool PointInBox(const glm::vec3& p, const glm::vec3& pos, const glm::vec3
 }
 
 // Assumes direction is normalized
-static bool RayBox(const glm::vec3& start, const glm::vec3& dir, const glm::vec3& pos, const glm::vec3& min, const glm::vec3& max, glm::vec3* hit = nullptr)
+static bool RayBox(const glm::vec3& start, const glm::vec3& dir, const glm::vec3& pos, const glm::vec3& min, const glm::vec3& max, float* t = nullptr)
 {
-#if 0
-    float lowProj = -FLT_MAX;
-    float highProj = FLT_MAX;
+#if 1
+	float tmin = -INFINITY;
+	float tmax = INFINITY;
 
     for(int i = 0; i < 3; ++i)
     {
-        float minProj = ((pos[i] + min[i]) - start[i]) / dir[i];
-        float maxProj = ((pos[i] + max[i]) - start[i]) / dir[i];
+		if (dir[i] == 0.0f) continue;
 
-        if(minProj > maxProj)
-        {
-            float tmp = minProj;
-            maxProj = minProj;
-            minProj = tmp;
-        }
+        float tx1 = ((min[i] + pos[i]) - start[i])/dir[i];
+        float tx2 = ((max[i] + pos[i]) - start[i])/dir[i];
 
-        if(maxProj < lowProj || minProj > highProj)
-            return false;
-
-        if(minProj > lowProj) lowProj = minProj;
-        if(maxProj < highProj) highProj = maxProj;
+        tmin = max(tmin, min(tx1, tx2));
+        tmax = min(tmax, max(tx1, tx2));
     }
 
-    bool result = lowProj > highProj ? false : true;
+    *t = tmin;
 
-    if(result && hit)
-    {
-        *hit = start + dir * lowProj;
-        return true;
-    }
-
-    return result;
+    return tmax >= 0 && tmax >= tmin;
 #else 
     glm::vec3 c = (min + max) / 2.0f + pos;
 
@@ -200,7 +179,7 @@ static bool RayBox(const glm::vec3& start, const glm::vec3& dir, const glm::vec3
         {
             // TODO: Implement properly
 
-            // Linearly step from the the start and the perpendicular length point p
+            // step from the the start and the perpendicular length point p
             // until you hit the wall, move back and call that the hit location
             const float tmove = dot / RAY_BOX_HIT_SAMPLE_COUNT;
             float t = 0;
@@ -212,7 +191,10 @@ static bool RayBox(const glm::vec3& start, const glm::vec3& dir, const glm::vec3
                 t += tmove;
 
 				if (PointInBox(pt, pos, min, max))
+                {
+                    pt -= dir;
 					break;
+                }
             };
 
             *hit = pt;
@@ -295,6 +277,80 @@ static bool RayLevel(const glm::vec2& origin, const glm::vec2& delta, const Leve
 #endif
 }
 
+// TODO: Refactor this so it returns a bool and takes a Hit& or something
+static Entity* GetHitEntity(float x, float y, float z, float angle, Game& game, EntityType& type, glm::vec3& hitPos)
+{
+	struct Hit
+	{
+		EntityType etype;
+		Entity* e;
+        float t;
+	};
+
+    int entityCount = 0;
+
+    static EntityType types[GAME_MAX_HIT_CHECK_ENTS];
+    static Entity* entities[GAME_MAX_HIT_CHECK_ENTS];
+
+    int hitCount = 0;
+	static Hit hits[GAME_MAX_HIT_CHECK_ENTS];
+    
+    // TODO: Prune entities which shouldn't be checked
+
+    glm::vec3 start{x, y, z};
+    glm::vec3 dir{sinf(angle), 0, cosf(angle)}; 
+
+    for(int i = 0; i < game.doorCount; ++i)
+    {
+        if(entityCount >= COUNT_OF(entities)) break;
+        types[entityCount] = ET_DOOR;
+        entities[entityCount++] = &game.doors[i];
+    }
+
+    for(int i = 0; i < game.enemyCount; ++i)
+    {
+        if(entityCount >= COUNT_OF(entities)) break;
+        if(game.enemies[i].health <= 0) continue;
+        types[entityCount] = ET_ENEMY;
+        entities[entityCount++] = &game.enemies[i];
+    }
+
+    for(int i = 0; i < game.boxColliderCount; ++i)
+    {
+        if(entityCount >= COUNT_OF(entities)) break;
+
+        types[entityCount] = ET_BOXCOLLIDER;
+        entities[entityCount++] = &game.boxColliders[i];
+    }
+
+    for(int i = 0; i < entityCount; ++i)
+    {
+        Entity& ent = *entities[i];
+		float t;
+        if(RayBox(start, dir, glm::vec3(ent.x, ent.y, ent.z), ent.min, ent.max, &t))
+        {
+            if(hitCount >= GAME_MAX_HIT_CHECK_ENTS) break;
+
+            hits[hitCount++] = { types[i], &ent, t };
+        }
+    }
+
+    // TODO: Better priority system; perhaps sort by type on top of distance?
+    std::sort(hits, hits + hitCount, [](const Hit& a, const Hit& b) {
+        return a.t < b.t;
+    });
+
+    if(hitCount > 0)
+    {
+		type = hits[0].etype;
+        hitPos = start + dir * (hits[0].t - IMPACT_HOVER_EPSILON);
+		return hits[0].e;
+    }
+
+    return nullptr;
+}
+
+#if 0
 static bool CheckShot(float x, float y, float z, float angle, const Entity& target, Game& game)
 { 
     glm::vec3 start{x, y, z};
@@ -320,6 +376,12 @@ static bool CheckShot(float x, float y, float z, float angle, const Entity& targ
     for(int i = 0; i < game.boxColliderCount; ++i)
     {
         const Entity& box = game.boxColliders[i];
+    
+        // Check to see if the box is closer to us than the target
+        // If it s farther, we can assume the box isn't in the way
+        if(glm::length2(glm::vec3(box.x, box.y, box.z) - start) >
+           glm::length2(glm::vec3(target.x, target.y, target.z) - start))
+            continue;
 
         if(RayBox(glm::vec3(x, y, z), glm::vec3(sinf(angle), 0, cosf(angle)), glm::vec3(box.x, box.y, box.z), box.min, box.max))
             return false;
@@ -329,9 +391,11 @@ static bool CheckShot(float x, float y, float z, float angle, const Entity& targ
 
     return RayBox(start, dir, glm::vec3(target.x, target.y, target.z), target.min, target.max);
 }
+#endif
 
 static void Shoot(float x, float y, float z, float angle, Game& game)
 {
+#if 0
     // TODO: Think about whether tracers are even necessary
     //CreateTracer(game, x, y + TRACER_Y_OFF, z, angle);
 
@@ -412,6 +476,39 @@ static void Shoot(float x, float y, float z, float angle, Game& game)
 
         int dir = VecToDir(hit.x - boxCenter.x, hit.z - boxCenter.z);
         CreateImpact(game, hit.x, hit.y, hit.z, dir);
+    }
+#endif
+
+    EntityType etype;
+    glm::vec3 hitPos;
+    Entity* ent = GetHitEntity(x, y, z, angle, game, etype, hitPos);
+
+    if(ent)
+    {
+        if(etype == ET_ENEMY)
+        {
+            Enemy& enemy = *(Enemy*)ent;
+
+            enemy.health -= 1;
+
+            if(enemy.health <= 0)
+                enemy.frame = 1;
+            else
+                enemy.hitTimer = ENEMY_HIT_TIME;
+        }
+        else if(etype == ET_BOXCOLLIDER)
+        {
+            // Get closest tile center
+            glm::vec3 c = hitPos;
+
+            int tx = (int)(c.x / LEVEL_SCALE_FACTOR);
+            int tz = (int)(c.z / LEVEL_SCALE_FACTOR);
+            
+            c = glm::vec3(tx * LEVEL_SCALE_FACTOR + LEVEL_SCALE_FACTOR / 2.0f, 0, tz * LEVEL_SCALE_FACTOR + LEVEL_SCALE_FACTOR / 2.0f);
+
+            int dir = VecToDir(hitPos.x - c.x, hitPos.z - c.z);
+            CreateImpact(game, hitPos.x, hitPos.y, hitPos.z, dir);
+        }
     }
 }
 
@@ -507,10 +604,10 @@ static void Update(Player& player, Game& game, float dt)
 
     if(player.shoot)
     {
-        if(player.animTimer < 0.1f) 
+        if(player.animTimer < 0.2f) 
         {
             player.animTimer += dt;
-            player.frame = (int)(player.animTimer / 0.02f);
+            player.frame = (int)(player.animTimer / 0.04f);
             
             if(player.lastFrame != 3 && player.frame == 3)
                 Shoot(player.x, 0, player.z, player.lookAngle + ((float)rand() / RAND_MAX) * 0.02f - 0.01f, game);
@@ -923,7 +1020,7 @@ void Draw(const Game& game, const glm::mat4& proj)
 
         Draw(game.planeMesh);
     }
-
+    
     // Draw tracers
     glBindTexture(GL_TEXTURE_2D, game.tracerTexture.id);
     
@@ -949,9 +1046,10 @@ void Draw(const Game& game, const glm::mat4& proj)
         Draw(game.planeMesh);
     }
 
-#define DEBUG_DRAW
 #ifdef DEBUG_DRAW
     // Draw box colliders
+    glDisable(GL_DEPTH_TEST);
+
     glBindTexture(GL_TEXTURE_2D, game.whiteTexture.id);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -970,7 +1068,24 @@ void Draw(const Game& game, const glm::mat4& proj)
         Draw(game.boxMesh);
     }
 
+	for (int i = 0; i < game.enemyCount; ++i)
+	{
+        glm::vec3 min = game.enemies[i].min;
+        glm::vec3 max = game.enemies[i].max;
+
+        glm::mat4 scale = glm::scale(glm::vec3(max.x - min.x,
+                                               max.y - min.y,
+                                               max.z - min.z));
+        
+        glm::mat4 model = glm::translate(glm::vec3(game.enemies[i].x, game.enemies[i].y, game.enemies[i].z)) * scale;
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+        Draw(game.boxMesh);
+    }
+
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+    glEnable(GL_DEPTH_TEST);
 #endif
 
     // Draw player gun

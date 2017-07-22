@@ -57,11 +57,17 @@ def create_box_collider_ents(tiles):
 
             row_length, col_length = (xx - x, yy - y)
 
+            xx, yy = (x + 1, y + 1)
+
+            # TODO: Check for optimal box (width + height) and compare
+            # its area to the row/column colliders
+
             # longer as a row
             if row_length > col_length:
                 add_box(x, y, row_length, 1)
             else:
                 add_box(x, y, 1, col_length)
+
         x += 1
         if x >= len(tiles[y]):
             x = 0
@@ -81,12 +87,29 @@ def create_planes(tiles, scale = 2):
     for row in tiles: 
         x = 0
         for tile in row:
-            # TODO: ceilings, walls
             xx = x * scale
             yy = y * scale
-            planes.append((xx, 0, yy, xx + scale, 0, yy, xx + scale, 0, yy + scale, tile))
+            if tile == 0:
+                planes.append((xx, 0, yy + scale, xx, 0, yy, xx + scale, 0, yy + scale, tile))
+            else:
+                # make walls wherever they are visible
+                
+                # low-x wall
+                if x - 1 >= 0 and row[x - 1] == 0:
+                    planes.append((xx, 0, yy, xx, scale, yy, xx, 0, yy + scale, tile))
+                # low-z wall
+                if y - 1 >= 0 and tiles[y - 1][x] == 0:
+                    planes.append((xx, 0, yy, xx, scale, yy, xx + scale, 0, yy, tile))
+                # high-x wall
+                if x + 1 < len(row) and row[x + 1] == 0:
+                    planes.append((xx + scale, 0, yy, xx + scale, scale, yy, xx + scale, 0, yy + scale, tile)) 
+                # high-z wall
+                if y + 1 < len(tiles) and tiles[y + 1][x] == 0:
+                    planes.append((xx + scale, 0, yy + scale, xx + scale, scale, yy + scale, xx, 0, yy + scale, tile))
             x += 1
         y += 1 
+    
+    print("Total number of planes:", len(planes))
     return planes
 
 def save(planes, entities, filename):

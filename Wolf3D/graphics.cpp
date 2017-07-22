@@ -94,7 +94,7 @@ Mesh CreateLevelMesh(const Level& level, const Texture& texture)
         const Level::Plane& plane = level.planes[i];
 
         int oa[3] = { plane.a[0] - plane.o[0], plane.a[1] - plane.o[1], plane.a[2] - plane.o[2] };
-        int c[3] = { plane.b[0] - oa[0], plane.b[1] - oa[1], plane.b[2] - oa[2] };
+        int c[3] = { plane.b[0] + oa[0], plane.b[1] + oa[1], plane.b[2] + oa[2] };
 
         const float size = LEVEL_SCALE_FACTOR / 2.0f;
     
@@ -106,23 +106,23 @@ Mesh CreateLevelMesh(const Level& level, const Texture& texture)
         float y2 = plane.a[1] * size;
         float z2 = plane.a[2] * size;
         
-        float x3 = plane.b[0] * size;
-        float y3 = plane.b[1] * size;
-        float z3 = plane.b[2] * size;
-
-        float x4 = c[0] * size;
-        float y4 = c[1] * size;
-        float z4 = c[2] * size;
+        float x3 = c[0] * size;
+        float y3 = c[1] * size;
+        float z3 = c[2] * size;
         
+        float x4 = plane.b[0] * size;
+        float y4 = plane.b[1] * size;
+        float z4 = plane.b[2] * size;
+
         float u1, v1, u2, v2;
         GetTileUV(texture, plane.tile, u1, v1, u2, v2);
 
         const Vertex verts[] =
         {
             { x1, y1, z1, u1, v1 },
-            { x2, y2, z2, u2, v1 },
+            { x2, y2, z2, u1, v2 },
             { x3, y3, z3, u2, v2 },
-            { x4, y4, z4, u1, v2 }
+            { x4, y4, z4, u2, v1 }
         };
 
 		ushort idx = (ushort)vertexCount;
