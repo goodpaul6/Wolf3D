@@ -82,7 +82,6 @@ def create_planes(tiles, scale = 2):
     planes = []
 
     # naively creates planes for each tile
-    # and connects them
     y = 0
     for row in tiles: 
         x = 0

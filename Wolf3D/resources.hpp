@@ -3,6 +3,8 @@
 #include <GL/gl3w.h>
 #include <stdlib.h>
 
+#define ET_MASK(etype) (1 << (etype))
+
 static const float LEVEL_SCALE_FACTOR = 2.0f;
 static const int MAX_LOAD_MESH_VERTICES = 500;
 
@@ -66,8 +68,8 @@ struct Level
         //  |         |
         //  |         |
         //  |         |
-        //  *---------* b
-        //  b-(a-o)
+        //  *---------*
+        //  b         a + b
         int o[3], a[3], b[3];
         int tile;
     };

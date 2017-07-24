@@ -19,3 +19,11 @@ Whenever I attempted to write a 3D game in the past, I would get bogged down by 
 * Painting entities which shake and change texture upon being shot
 * Enemies which follow you around and can be shot + killed
 
+## Week 2 + Weekend
+![Alt text](screens/week2weekend.png?raw=true "Week 2 + Weekend")
+### Features
+* Level geometry represented by planes
+* Optimal level collision boxes and geometry generated from python scripts
+* Simple enemy AI (idle, walking around, looking for player, shooting)
+* Enemies are completely animated (and their sprites face the correct directions)
+* Unified collision system

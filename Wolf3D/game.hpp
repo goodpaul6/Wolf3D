@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 #include "graphics.hpp"
 #include "resources.hpp"
 
@@ -35,10 +37,23 @@ struct Door : public Entity
 
 struct Enemy : public Entity
 {
+    enum State : uint8_t
+    {
+        IDLE,
+        WALKING,
+        SAW_PLAYER,
+        START_CHASE,
+        CHASING,
+        SHOOTING,
+        DEAD
+    } state = IDLE;
+
     float lookAngle = 0;
     int health = 1;
     float speed = 2;
     float hitTimer = 0;
+    float animTimer = 0;
+    float stateTimer = 0;
 
     int frame = 0;
 };
@@ -86,6 +101,8 @@ struct Game
     Tracer tracers[GAME_MAX_TRACERS];
     
     Level level;
+
+    bool debugDraw = false;
 
     mutable Mesh enemyMesh;
     mutable Mesh levelMesh;

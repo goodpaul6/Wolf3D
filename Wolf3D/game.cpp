@@ -9,21 +9,30 @@
 #include "input.hpp"
 #include "utils.hpp"
 
-// TODO:
-// - Fix RayBox; it doesn't seem to be working in very specific cases where we check against boxColliders 
-//   tbh this might not be a RayBox problem but still
-
 static const int GAME_MAX_HIT_CHECK_ENTS = 20;
 static const int MAX_SHOT_LEVEL_INTERSECTIONS = 20;
 static const float PLAYER_DOOR_OPEN_DIST = 2.5f;
 static const float DOOR_OPEN_SPEED = 1.5f;
-static const float DOOR_OPEN_AMOUNT = 1.5f;
-static const float ENEMY_HIT_TIME = 1.5f;
+static const float DOOR_OPEN_AMOUNT = 1.75f;
+static const float ENEMY_HIT_TIME = 0.15f;
+static const float ENEMY_IDLE_TIME = 2.0f;
+static const float ENEMY_WALK_TIME = 2.0f;
+static const float ENEMY_SHOOT_DIST = 5.0f;
+static const float ENEMY_LOSE_SIGHT_DIST = 10.0f;
+static const float ENEMY_SIGHT_DIST = 7.0f;
+static const float ENEMY_SAW_PLAYER_TIME = 0.25f;
+static const float ENEMY_START_CHASE_TIME = 0.25f;
 static const float IMPACT_LIFE = 10.0f;
 static const float IMPACT_HOVER_EPSILON = 0.1f;
-static const float TRACER_MOVE_SPEED = 60.0f;
+static const float TRACER_MOVE_SPEED = 1.0f;
 static const float TRACER_Y_OFF = -0.2f;
-static const float TRACER_LIFE = 1.0f;
+static const float TRACER_LIFE = 10.0f;
+static const float DIR_DEGREES = 45.0f;
+
+inline static glm::vec3 Pos(const Entity& e)
+{
+    return glm::vec3(e.x, e.y, e.z);
+}
 
 static bool LinePlane(const glm::vec3& lineStart, const glm::vec3& lineEnd, const glm::vec3& planeOrigin, const glm::vec3& planeNormal, glm::vec3* hit = nullptr)
 {
@@ -67,22 +76,30 @@ static void Forward(float lookAngle, float& x, float& z, float scale = 1)
 
 // Projects the x, y coords onto each direction's vector,
 // picking the one with the largest projection
-static int VecToDir(float x, float z)
+// If major is true, then only the major directions are
+// returned
+static int VecToDir(float x, float z, bool major = false)
 {
-    const float dirs[4][2] =
+    const float dirs[8][2] =
     {
         // x, z
-        { 0, 1 },
-        { 1, 0 },
-        { 0, -1 },
-        { -1, 0 }
+        { sinf(0.0f), cosf(0.0f) }, 
+        { sinf((float)M_PI / 4), cosf((float)M_PI / 4) }, 
+        { sinf((float)M_PI / 2), cosf((float)M_PI / 2) }, 
+        { sinf((float)M_PI / 2 + (float)M_PI / 4), cosf((float)M_PI / 2 + (float)M_PI / 4) }, 
+        { sinf((float)M_PI), cosf((float)M_PI) }, 
+        { sinf((float)M_PI + (float)M_PI / 4), cosf((float)M_PI + (float)M_PI / 4) }, 
+        { sinf((float)M_PI + (float)M_PI / 2), cosf((float)M_PI + (float)M_PI / 2) },
+        { sinf((float)M_PI + (float)M_PI / 2 + (float)M_PI / 4), cosf((float)M_PI + (float)M_PI / 2 + (float)M_PI / 4) }
     };
 
     int maxDir = 0;
     float maxDot = 0;
 
-    for(int i = 0; i < 4; ++i) 
+    for(int i = 0; i < 8; ++i) 
     {
+        if(major && i % 2 != 0) continue;
+
         float dot = dirs[i][0] * x + dirs[i][1] * z;
         
         if(dot > maxDot)
@@ -207,78 +224,9 @@ static bool RayBox(const glm::vec3& start, const glm::vec3& dir, const glm::vec3
 #endif
 }
 
-// TODO: Get rid of level tile stuff
-static bool LevelHasTile(const Level& level, int left, int top, int right, int bottom)
-{
-    return false;
-#if 0
-    for(int zz = top; zz <= bottom; ++zz)
-    {
-        if(zz < 0) continue;
-        if(zz >= level.height) break;
-
-        for(int xx = left; xx <= right; ++xx)
-        {
-            if(xx < 0) continue;
-            if(xx >= level.width) break;
-
-            if(level.tiles[xx + zz * level.width] > 0)
-                return true;
-        }
-    }
-
-    return false;
-#endif
-}
-
-// origin = origin of the ray, delta = offset from the origin to the target
-static bool RayLevel(const glm::vec2& origin, const glm::vec2& delta, const Level& level, glm::vec2& hit, int& dir)
-{
-    return false;
-// TODO: Check against plane based geometry
-#if 0
-    // Advance from origin sample count times and check if a wall was hit or
-    // we go out of bounds
-    for(int i = 0; i < LEVEL_RAY_SAMPLE_COUNT; ++i)
-    {
-        glm::vec2 pos = origin + (delta / (float)LEVEL_RAY_SAMPLE_COUNT) * (float)i;
-
-        int tx = (int)(pos.x / LEVEL_SCALE_FACTOR);
-        int ty = (int)(pos.y / LEVEL_SCALE_FACTOR);
-    
-        if(tx < 0 || tx >= level.width) continue;
-        if(ty < 0 || ty >= level.height) continue;
-
-        if(level.tiles[tx + ty * level.width] > 0)
-        {
-            // Center of tile (in world space)
-            glm::vec2 c(tx * LEVEL_SCALE_FACTOR + LEVEL_SCALE_FACTOR / 2, 
-                        ty * LEVEL_SCALE_FACTOR + LEVEL_SCALE_FACTOR / 2);
-
-            // Get closest edge
-
-            // Vector from center of tile to origin (clamped to extents of tile)
-            /*glm::vec2 a = glm::clamp(origin - c, glm::vec2(-LEVEL_SCALE_FACTOR / 2,
-                                                           -LEVEL_SCALE_FACTOR / 2),
-                                                 glm::vec2(LEVEL_SCALE_FACTOR / 2,
-                                                           LEVEL_SCALE_FACTOR / 2));
-
-            // Added back to tile center 
-            hit = c + a;*/
-        
-            hit = pos - delta / (float)LEVEL_RAY_SAMPLE_COUNT;
-            dir = VecToDir((hit - c).x, (hit - c).y);
-
-	        return true;
-        }
-    }
-    
-    return false;
-#endif
-}
-
 // TODO: Refactor this so it returns a bool and takes a Hit& or something
-static Entity* GetHitEntity(float x, float y, float z, float angle, Game& game, EntityType& type, glm::vec3& hitPos)
+// typeMask is a bitmask of entity types (created using ET_MASK(ET_PLAYER) | ET_MASK(ET_PAINTING)
+static Entity* GetHitEntity(float x, float y, float z, float angle, Game& game, int typeMask, EntityType& type, glm::vec3& hitPos)
 {
 	struct Hit
 	{
@@ -295,32 +243,51 @@ static Entity* GetHitEntity(float x, float y, float z, float angle, Game& game, 
     int hitCount = 0;
 	static Hit hits[GAME_MAX_HIT_CHECK_ENTS];
     
-    // TODO: Prune entities which shouldn't be checked
+    // TODO: Prune more entities which shouldn't be checked
 
     glm::vec3 start{x, y, z};
     glm::vec3 dir{sinf(angle), 0, cosf(angle)}; 
 
-    for(int i = 0; i < game.doorCount; ++i)
+    if(typeMask & ET_MASK(ET_DOOR))
     {
-        if(entityCount >= COUNT_OF(entities)) break;
-        types[entityCount] = ET_DOOR;
-        entities[entityCount++] = &game.doors[i];
+        for(int i = 0; i < game.doorCount; ++i)
+        {
+            if(entityCount >= COUNT_OF(entities)) break;
+            types[entityCount] = ET_DOOR;
+            entities[entityCount++] = &game.doors[i];
+        }
     }
 
-    for(int i = 0; i < game.enemyCount; ++i)
+    if(typeMask & ET_MASK(ET_ENEMY))
     {
-        if(entityCount >= COUNT_OF(entities)) break;
-        if(game.enemies[i].health <= 0) continue;
-        types[entityCount] = ET_ENEMY;
-        entities[entityCount++] = &game.enemies[i];
+        for(int i = 0; i < game.enemyCount; ++i)
+        {
+            if(entityCount >= COUNT_OF(entities)) break;
+            if(game.enemies[i].health <= 0) continue;
+            types[entityCount] = ET_ENEMY;
+            entities[entityCount++] = &game.enemies[i];
+        }
     }
 
-    for(int i = 0; i < game.boxColliderCount; ++i)
+    if(typeMask & ET_MASK(ET_PAINTING))
     {
-        if(entityCount >= COUNT_OF(entities)) break;
+        for(int i = 0; i < game.paintingCount; ++i)
+        {
+            if(entityCount >= COUNT_OF(entities)) break;
+            types[entityCount] = ET_PAINTING;
+            entities[entityCount++] = &game.paintings[i];
+        }
+    }
 
-        types[entityCount] = ET_BOXCOLLIDER;
-        entities[entityCount++] = &game.boxColliders[i];
+    if(typeMask & ET_MASK(ET_BOXCOLLIDER))
+    {
+        for(int i = 0; i < game.boxColliderCount; ++i)
+        {
+            if(entityCount >= COUNT_OF(entities)) break;
+
+            types[entityCount] = ET_BOXCOLLIDER;
+            entities[entityCount++] = &game.boxColliders[i];
+        }
     }
 
     for(int i = 0; i < entityCount; ++i)
@@ -350,138 +317,13 @@ static Entity* GetHitEntity(float x, float y, float z, float angle, Game& game, 
     return nullptr;
 }
 
-#if 0
-static bool CheckShot(float x, float y, float z, float angle, const Entity& target, Game& game)
-{ 
-    glm::vec3 start{x, y, z};
-    glm::vec3 dir{sinf(angle), 0, cosf(angle)}; 
-    
-    // TODO: Think of a more optimal solution than checking every door
-    // Check to see if there are any doors in the way
-    for(int i = 0; i < game.doorCount; ++i)
-    {
-        const Door& door = game.doors[i];
-        
-        // Check to see if the door is closer to us than the target
-        // If it s farther, we can assume the door isn't in the way
-        if(glm::length2(glm::vec3(door.x, door.y, door.z) - start) >
-           glm::length2(glm::vec3(target.x, target.y, target.z) - start))
-            continue;
-
-        // Check for ray collision with the door
-        if(RayBox(start, dir, glm::vec3(door.x, door.y, door.z), door.min, door.max))
-            return false;
-    }
-
-    for(int i = 0; i < game.boxColliderCount; ++i)
-    {
-        const Entity& box = game.boxColliders[i];
-    
-        // Check to see if the box is closer to us than the target
-        // If it s farther, we can assume the box isn't in the way
-        if(glm::length2(glm::vec3(box.x, box.y, box.z) - start) >
-           glm::length2(glm::vec3(target.x, target.y, target.z) - start))
-            continue;
-
-        if(RayBox(glm::vec3(x, y, z), glm::vec3(sinf(angle), 0, cosf(angle)), glm::vec3(box.x, box.y, box.z), box.min, box.max))
-            return false;
-    }
-
-	if (!target.hasbb) return false;
-
-    return RayBox(start, dir, glm::vec3(target.x, target.y, target.z), target.min, target.max);
-}
-#endif
-
 static void Shoot(float x, float y, float z, float angle, Game& game)
 {
-#if 0
-    // TODO: Think about whether tracers are even necessary
     //CreateTracer(game, x, y + TRACER_Y_OFF, z, angle);
-
-    for(int i = 0; i < game.enemyCount; ++i)
-    {
-        Enemy& enemy = game.enemies[i];
-
-        if(enemy.health <= 0)
-            continue;     
-
-        if(CheckShot(x, y, z, angle, enemy, game))
-        {
-            enemy.health -= 1;
-
-            if(enemy.health <= 0)
-                enemy.frame = 1;
-            else
-                enemy.hitTimer = ENEMY_HIT_TIME;
-
-			return;
-        }
-    }
-
-    for(int i = 0; i < game.paintingCount; ++i)
-    {
-        Painting& painting = game.paintings[i];
-
-        if(CheckShot(x, y, z, angle, painting, game))
-        {
-            if(!painting.hit)
-                painting.hit = true;
-            painting.angularVel += ((rand() / (float)RAND_MAX) - 0.5f);
-            return;
-        }
-    }
-
-    // TODO: Check if doors and stuff are in the way and only then generate impacts
-
-    // Hit locations
-    int hitCount = 0;
-    static int boxIndices[MAX_SHOT_LEVEL_INTERSECTIONS];
-    static glm::vec3 hits[MAX_SHOT_LEVEL_INTERSECTIONS]; 
-    
-    for(int i = 0; i < game.boxColliderCount; ++i)
-    {
-        if(hitCount >= MAX_SHOT_LEVEL_INTERSECTIONS)
-        {
-            //printf("Discarding %d hit checks.\n", game.boxColliderCount - (i + 1));
-            break;
-        }
-
-        const Entity& box = game.boxColliders[i];
-
-        if(RayBox(glm::vec3(x, y, z), glm::vec3(sinf(angle), 0, cosf(angle)), glm::vec3(box.x, box.y, box.z), box.min, box.max, &hits[hitCount]))
-        {
-            boxIndices[hitCount] = i;
-            hitCount += 1;
-        }
-    }
-
-    if(hitCount > 0)
-    {
-        int closestHit = 0;
-        float minHitDist2 = FLT_MAX;
-
-        for(int i = 0; i < hitCount; ++i)
-        {
-            float d2 = glm::length2(hits[i] - glm::vec3(x, y, z)); 
-            if(d2 < minHitDist2)
-            {
-                minHitDist2 = d2;
-                closestHit = i;
-            }
-        }
-
-        glm::vec3 hit = hits[closestHit];
-        glm::vec3 boxCenter = Center(game.boxColliders[boxIndices[closestHit]]);
-
-        int dir = VecToDir(hit.x - boxCenter.x, hit.z - boxCenter.z);
-        CreateImpact(game, hit.x, hit.y, hit.z, dir);
-    }
-#endif
 
     EntityType etype;
     glm::vec3 hitPos;
-    Entity* ent = GetHitEntity(x, y, z, angle, game, etype, hitPos);
+    Entity* ent = GetHitEntity(x, y, z, angle, game, ET_MASK(ET_DOOR) | ET_MASK(ET_ENEMY) | ET_MASK(ET_PAINTING) | ET_MASK(ET_BOXCOLLIDER), etype, hitPos);
 
     if(ent)
     {
@@ -492,9 +334,19 @@ static void Shoot(float x, float y, float z, float angle, Game& game)
             enemy.health -= 1;
 
             if(enemy.health <= 0)
-                enemy.frame = 1;
+            {
+                enemy.state = Enemy::DEAD;
+                enemy.animTimer = 0;
+            }
             else
                 enemy.hitTimer = ENEMY_HIT_TIME;
+        }
+        else if(etype == ET_PAINTING)
+        {
+            Painting& painting = *(Painting*)ent;
+
+            painting.hit = true;
+            painting.angularVel += ((float)rand() / RAND_MAX) - 0.5f;
         }
         else if(etype == ET_BOXCOLLIDER)
         {
@@ -506,28 +358,10 @@ static void Shoot(float x, float y, float z, float angle, Game& game)
             
             c = glm::vec3(tx * LEVEL_SCALE_FACTOR + LEVEL_SCALE_FACTOR / 2.0f, 0, tz * LEVEL_SCALE_FACTOR + LEVEL_SCALE_FACTOR / 2.0f);
 
-            int dir = VecToDir(hitPos.x - c.x, hitPos.z - c.z);
+            int dir = VecToDir(hitPos.x - c.x, hitPos.z - c.z, true);
             CreateImpact(game, hitPos.x, hitPos.y, hitPos.z, dir);
         }
     }
-}
-
-static bool Collide(const Entity& e, float x, float z, const Level& level)
-{
-    if(!e.hasbb) return false;
-    
-    float minx = x + e.min.x;
-    float maxx = x + e.max.x;
-    
-    float minz = z + e.min.z;
-    float maxz = z + e.max.z;
-
-    int left = (int)(minx / LEVEL_SCALE_FACTOR);
-    int top = (int)(minz / LEVEL_SCALE_FACTOR);
-    int right = (int)(maxx / LEVEL_SCALE_FACTOR);
-    int bottom = (int)(maxz / LEVEL_SCALE_FACTOR);
-
-    return LevelHasTile(level, left, top, right, bottom);
 }
 
 static bool Collide(const Entity& a, float x, float y, float z, const Entity& b)
@@ -547,47 +381,68 @@ static bool Collide(const Entity& a, float x, float y, float z, const Entity& b)
     return true;
 }
 
-static bool CollideSolids(const Entity& e, float x, float y, float z, const Game& game)
+static bool CollideSolids(const Entity& e, float x, float y, float z, int typeMask, const Game& game)
 {
-    for(int i = 0; i < game.boxColliderCount; ++i)
+    // TODO: Skip all entities that match e of every time
+
+    if(typeMask & ET_MASK(ET_ENEMY))
     {
-        if(Collide(e, x, y, z, game.boxColliders[i]))
-            return true;
+        for(int i = 0; i < game.enemyCount; ++i)
+        {
+            if(&e == &game.enemies[i]) continue;
+            if(Collide(e, x, y, z, game.enemies[i]))
+                return true;
+        }
     }
 
-    for(int i = 0; i < game.doorCount; ++i)
+    if(typeMask & ET_MASK(ET_BOXCOLLIDER))
     {
-        if(Collide(e, x, y, z, game.doors[i]))
-            return true;
+        for(int i = 0; i < game.boxColliderCount; ++i)
+        {
+            if(Collide(e, x, y, z, game.boxColliders[i]))
+                return true;
+        }
+    }
+    
+    if(typeMask & ET_MASK(ET_DOOR))
+    {
+        for(int i = 0; i < game.doorCount; ++i)
+        {
+            if(Collide(e, x, y, z, game.doors[i]))
+                return true;
+        }
     }
 
-    for(int i = 0; i < game.paintingCount; ++i)
+    if(typeMask & ET_MASK(ET_PAINTING))
     {
-        if(Collide(e, x, y, z, game.paintings[i]))
-            return true;
+        for(int i = 0; i < game.paintingCount; ++i)
+        {
+            if(Collide(e, x, y, z, game.paintings[i]))
+                return true;
+        }
     }
 
     return false;
 }
 
-static void MoveBy(Entity& e, float x, float y, float z, const Game& game)
+static void MoveBy(Entity& e, float x, float y, float z, int typeMask, const Game& game)
 {
     // TODO: Clean this up so it's not doing float cmp
     if(x != 0)
     {
-        if(CollideSolids(e, e.x + x, e.y, e.z, game)) x = 0;
+        if(CollideSolids(e, e.x + x, e.y, e.z, typeMask, game)) x = 0;
         e.x += x;
     }
 
     if(y != 0)
     {
-        if(CollideSolids(e, e.x, e.y + y, e.z, game)) y = 0;
+        if(CollideSolids(e, e.x, e.y + y, e.z, typeMask, game)) y = 0;
         e.y += y;
     }
     
     if(z != 0)
     {
-        if(CollideSolids(e, e.x, e.y, e.z + z, game)) z = 0;
+        if(CollideSolids(e, e.x, e.y, e.z + z, typeMask, game)) z = 0;
         e.z += z;
     }
 }
@@ -609,6 +464,10 @@ static void Update(Player& player, Game& game, float dt)
             player.animTimer += dt;
             player.frame = (int)(player.animTimer / 0.04f);
             
+            // FIXME: We don't shoot from player.y because
+            // that bobs below the bounding boxes of enemies
+            // Maybe we shouldn't move the player y pos directly
+            // and just render with the bob
             if(player.lastFrame != 3 && player.frame == 3)
                 Shoot(player.x, 0, player.z, player.lookAngle + ((float)rand() / RAND_MAX) * 0.02f - 0.01f, game);
 
@@ -622,14 +481,7 @@ static void Update(Player& player, Game& game, float dt)
     }
     
     if(IsKeyDown(SDL_SCANCODE_SPACE) && !player.shoot)
-    {
-        // FIXME: We don't shoot from player.y because
-        // that bobs below the bounding boxes of enemies
-        // Maybe we shouldn't move the player y pos directly
-        // and just render with the bob
-        //Shoot(player.x, 0, player.z, player.lookAngle, game);
         player.shoot = true; 
-    }
 
     bool move = false;
     float moveAngle = 0;
@@ -682,7 +534,7 @@ static void Update(Player& player, Game& game, float dt)
 
     if(move)
     {
-        MoveBy(player, x, 0, z, game);
+        MoveBy(player, x, 0, z, ET_MASK(ET_BOXCOLLIDER) | ET_MASK(ET_DOOR) | ET_MASK(ET_PAINTING), game);
         player.y = sinf(player.stride) / 20.0f;
 
         player.stride += 10 * dt;
@@ -724,27 +576,167 @@ static void Update(Door& door, float dt)
 
 static void Update(Enemy& enemy, float dt, Game& game)
 {
-    enemy.lookAngle = game.player.lookAngle + (float)M_PI;
-    
-    if(enemy.health > 0)
+    // TODO: Get rid of hitTimer and make it a state
+    if(enemy.hitTimer > 0)
     {
-        if(enemy.hitTimer > 0)
-        {
-            enemy.hitTimer -= dt;
-            enemy.lookAngle += sinf(enemy.hitTimer) * 1.2f;
-            return;
-        }
-
-        float dx = game.player.x - enemy.x;
-        float dz = game.player.z - enemy.z;
-
-        float moveAngle = atan2f(dx, dz);
-
-        float mx, mz;
-        Forward(moveAngle, mx, mz, dt * enemy.speed);
-
-        MoveBy(enemy, mx, 0, mz, game);
+        enemy.hitTimer -= dt;
+        enemy.frame = 8 * 5 + 7;
+        return;
     }
+
+    glm::vec3 pdiff = Pos(game.player) - Pos(enemy);
+
+    float angleDiff = atan2f(pdiff.x, pdiff.z);
+
+    int dir = VecToDir(sinf(angleDiff - enemy.lookAngle), cosf(angleDiff - enemy.lookAngle));
+    
+    // Animations
+    switch(enemy.state)
+    {
+        case Enemy::START_CHASE:
+        case Enemy::IDLE:
+        {
+            enemy.frame = dir;
+        } break;
+
+        case Enemy::SAW_PLAYER:
+        {
+			enemy.frame = 8 * 6;
+        } break;
+
+        case Enemy::DEAD:
+        {
+            int deathFrame = ((int)(enemy.animTimer / 0.1f));
+            if(deathFrame > 4) deathFrame = 4;
+
+            enemy.frame = 8 * 5 + deathFrame;
+        } break;
+
+        case Enemy::WALKING:
+        case Enemy::CHASING:
+        {
+            int walkFrame = ((int)(enemy.animTimer / 0.2f)) % 4; 
+            enemy.frame = dir + (1 + walkFrame) * 8;
+        } break;
+
+        case Enemy::SHOOTING:
+        {
+            int shootFrame = ((int)(enemy.animTimer / 0.2f)) % 2;
+            enemy.frame = 8 * 6 + 1 + shootFrame;
+        } break;
+    }
+
+    // Updates
+    switch(enemy.state)
+    {
+        case Enemy::WALKING:
+        case Enemy::CHASING:
+        {
+            if(enemy.state == Enemy::CHASING)
+                enemy.lookAngle = angleDiff;
+
+            float mx, mz;
+            Forward(enemy.lookAngle, mx, mz, dt * enemy.speed);
+
+            MoveBy(enemy, mx, 0, mz, ET_MASK(ET_BOXCOLLIDER) | ET_MASK(ET_ENEMY) | ET_MASK(ET_DOOR) | ET_MASK(ET_PAINTING), game);
+        } break;
+
+        case Enemy::SAW_PLAYER:
+        {
+            enemy.lookAngle = angleDiff;
+        } break;
+
+        case Enemy::SHOOTING:
+        {
+            // TODO: Actually shoot at the player
+        } break;
+    }
+
+    // State transitions
+    switch(enemy.state)
+    {
+        case Enemy::IDLE:
+        case Enemy::WALKING:
+        {
+            // TODO: Look at the absolute difference between the angle which
+            // the enemy is looking in and angleDiff and check if that's under
+            // some threshold
+            
+            if(glm::length2(Pos(game.player) - Pos(enemy)) < ENEMY_SIGHT_DIST * ENEMY_SIGHT_DIST)
+            {
+                EntityType etype;
+				glm::vec3 t;
+                // Make sure nothing between us and the player first
+                Entity* e = GetHitEntity(enemy.x, enemy.y, enemy.z, angleDiff, game, ET_MASK(ET_DOOR) | ET_MASK(ET_BOXCOLLIDER), etype, t);
+                if(!e || glm::length2(t - Pos(enemy)) >= glm::length2(Pos(game.player) - Pos(enemy)))
+                {
+                    enemy.lookAngle = angleDiff;
+                    enemy.stateTimer = 0;
+                    enemy.state = Enemy::SAW_PLAYER;	
+                }
+            }
+
+			if (enemy.state == Enemy::IDLE && enemy.stateTimer >= ENEMY_IDLE_TIME)
+			{
+                enemy.lookAngle += ((((float)rand() / RAND_MAX) - 0.5f) * (float)M_PI);
+				enemy.stateTimer = 0;
+				enemy.state = Enemy::WALKING;
+			}
+
+            if(enemy.state == Enemy::WALKING && enemy.stateTimer >= ENEMY_WALK_TIME)
+            {
+                enemy.stateTimer = 0;
+                enemy.state = Enemy::IDLE;
+            }
+        } break;
+
+        case Enemy::SAW_PLAYER:
+        {
+            if(enemy.stateTimer >= ENEMY_SAW_PLAYER_TIME)
+            {
+                enemy.stateTimer = 0;
+                enemy.state = Enemy::START_CHASE;
+            }
+        } break;
+
+        case Enemy::START_CHASE:
+        {
+            if(enemy.stateTimer >= ENEMY_START_CHASE_TIME)
+            {
+                enemy.stateTimer = 0;
+                enemy.state = Enemy::CHASING;
+            }
+        } break;
+
+        case Enemy::CHASING:
+        {
+            float dist2 = glm::length2(Pos(game.player) - Pos(enemy));
+
+            if(dist2 < ENEMY_SHOOT_DIST * ENEMY_SHOOT_DIST)
+            {
+                enemy.stateTimer = 0;
+                enemy.state = Enemy::SHOOTING;
+            }
+            else if(dist2 >= ENEMY_LOSE_SIGHT_DIST * ENEMY_LOSE_SIGHT_DIST)
+            {
+                // TODO: Add a state to be looking for the player
+                enemy.stateTimer = 0;
+                enemy.state = Enemy::IDLE;
+            }
+        } break;
+
+        case Enemy::SHOOTING:
+        {
+            if(glm::length2(Pos(game.player) - Pos(enemy)) > ENEMY_SHOOT_DIST * ENEMY_SHOOT_DIST)
+            {
+                enemy.stateTimer = 0;
+                enemy.state = Enemy::START_CHASE;
+            }
+        } break;
+    }
+
+    enemy.stateTimer += dt;
+    enemy.animTimer += dt;
 }
 
 static void Update(Painting& painting, float dt)
@@ -758,6 +750,8 @@ static void Update(Painting& painting, float dt)
 
 void Init(Game& game)
 {
+    game.debugDraw = false;
+
     game.level = LoadLevel("levels/test.map");
 
     game.basicShader = LoadShader("shaders/basic.vert", "shaders/basic.frag");
@@ -843,7 +837,7 @@ void Init(Game& game)
         enemy.z = info.z;
 
         enemy.hasbb = true;
-        enemy.min = glm::vec3(-0.3f, -0.5f, -0.3f);
+        enemy.min = glm::vec3(-0.3f, -1.0f, -0.3f);
         enemy.max = glm::vec3(0.3f, 0.5f, 0.3f);
 
         enemy.health = info.health;
@@ -897,6 +891,9 @@ void Init(Game& game)
 
 void Update(Game& game, float dt)
 {
+    if(WasKeyPressed(SDL_SCANCODE_TAB))
+        game.debugDraw = !game.debugDraw;
+
     Update(game.player, game, dt);
 
     for(int i = 0; i < game.doorCount; ++i)
@@ -972,7 +969,8 @@ void Draw(const Game& game, const glm::mat4& proj)
 
 	for (int i = 0; i < game.enemyCount; ++i)
 	{
-        glm::mat4 rot = glm::rotate(game.enemies[i].lookAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+        // Draw then facing the player plane
+        glm::mat4 rot = glm::rotate(game.player.lookAngle - (float)M_PI, glm::vec3(0.0f, 1.0f, 0.0f));
 
         // TODO: Remove this weird constant offset when the enemy dies
         float y = game.enemies[i].health > 0 ? 0 : -0.1f;
@@ -987,7 +985,7 @@ void Draw(const Game& game, const glm::mat4& proj)
     // Draw paintings
     for(int i = 0; i < game.paintingCount; ++i)
     {
-        float rads = glm::radians(game.paintings[i].dir * 90.0f);
+        float rads = glm::radians(game.paintings[i].dir * DIR_DEGREES);
     
         glm::mat4 rot = glm::rotate(rads, glm::vec3(0, 1, 0));
     
@@ -1013,7 +1011,7 @@ void Draw(const Game& game, const glm::mat4& proj)
     {
         if(game.impacts[i].life <= 0) continue;
 
-        glm::mat4 rot = glm::rotate(glm::radians(game.impacts[i].dir * 90.0f), glm::vec3(0, 1, 0)) * glm::translate(glm::vec3(-0.070f, -0.070f, 0));
+        glm::mat4 rot = glm::rotate(glm::radians(game.impacts[i].dir * DIR_DEGREES), glm::vec3(0, 1, 0)) * glm::translate(glm::vec3(-0.070f, -0.070f, 0));
 
         glm::mat4 model = glm::translate(glm::vec3(game.impacts[i].x, game.impacts[i].y, game.impacts[i].z)) * rot;
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
@@ -1046,47 +1044,48 @@ void Draw(const Game& game, const glm::mat4& proj)
         Draw(game.planeMesh);
     }
 
-#ifdef DEBUG_DRAW
-    // Draw box colliders
-    glDisable(GL_DEPTH_TEST);
+    if(game.debugDraw)
+    {
+        // Draw box colliders
+        glDisable(GL_DEPTH_TEST);
 
-    glBindTexture(GL_TEXTURE_2D, game.whiteTexture.id);
+        glBindTexture(GL_TEXTURE_2D, game.whiteTexture.id);
 
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-	for (int i = 0; i < game.boxColliderCount; ++i)
-	{
-        glm::vec3 min = game.boxColliders[i].min;
-        glm::vec3 max = game.boxColliders[i].max;
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        for (int i = 0; i < game.boxColliderCount; ++i)
+        {
+            glm::vec3 min = game.boxColliders[i].min;
+            glm::vec3 max = game.boxColliders[i].max;
 
-        glm::mat4 scale = glm::scale(glm::vec3(max.x - min.x,
-                                               max.y - min.y,
-                                               max.z - min.z));
-        
-        glm::mat4 model = glm::translate(glm::vec3(game.boxColliders[i].x, game.boxColliders[i].y, game.boxColliders[i].z)) * scale;
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+            glm::mat4 scale = glm::scale(glm::vec3(max.x - min.x,
+                                                   max.y - min.y,
+                                                   max.z - min.z));
+            
+            glm::mat4 model = glm::translate(glm::vec3(game.boxColliders[i].x, game.boxColliders[i].y, game.boxColliders[i].z)) * scale;
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
-        Draw(game.boxMesh);
+            Draw(game.boxMesh);
+        }
+
+        for (int i = 0; i < game.enemyCount; ++i)
+        {
+            glm::vec3 min = game.enemies[i].min;
+            glm::vec3 max = game.enemies[i].max;
+
+            glm::mat4 scale = glm::scale(glm::vec3(max.x - min.x,
+                                                   max.y - min.y,
+                                                   max.z - min.z));
+            
+            glm::mat4 model = glm::translate(glm::vec3(game.enemies[i].x, game.enemies[i].y, game.enemies[i].z)) * scale;
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+            Draw(game.boxMesh);
+        }
+
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+        glEnable(GL_DEPTH_TEST);
     }
-
-	for (int i = 0; i < game.enemyCount; ++i)
-	{
-        glm::vec3 min = game.enemies[i].min;
-        glm::vec3 max = game.enemies[i].max;
-
-        glm::mat4 scale = glm::scale(glm::vec3(max.x - min.x,
-                                               max.y - min.y,
-                                               max.z - min.z));
-        
-        glm::mat4 model = glm::translate(glm::vec3(game.enemies[i].x, game.enemies[i].y, game.enemies[i].z)) * scale;
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-
-        Draw(game.boxMesh);
-    }
-
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-    glEnable(GL_DEPTH_TEST);
-#endif
 
     // Draw player gun
     float x = 0, y = 0, z = 0;

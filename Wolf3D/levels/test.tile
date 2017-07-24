@@ -22,3 +22,8 @@
 
 player 3 0 3
 door 3 0 11 1
+enemy 16 0 9 5 3
+enemy 7 0 36 5 3
+enemy 5 0 15 5 3
+enemy 14 0 5 5 3
+painting 5 0 10 0
