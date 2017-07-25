@@ -88,9 +88,10 @@ def create_planes(tiles, scale = 2):
         for tile in row:
             xx = x * scale
             yy = y * scale
+            # -1 tiles are empty
             if tile == 0:
                 planes.append((xx, 0, yy + scale, xx, 0, yy, xx + scale, 0, yy + scale, tile))
-            else:
+            elif tile > 0:
                 # make walls wherever they are visible
                 
                 # low-x wall
