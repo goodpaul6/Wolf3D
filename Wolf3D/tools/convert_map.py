@@ -10,7 +10,7 @@ ENT_TO_TYPE = {
 
 CEILING_TILE = 108
 
-def read_tiles_and_ents(filename):
+def read(filename):
     tiles = []
     entities = []
 
@@ -28,7 +28,7 @@ def read_tiles_and_ents(filename):
             if not tokens: 
                 line = f.readline()
                 continue
-            entities.append(tuple([ENT_TO_TYPE[tokens[0]]] + tokens[1:]))
+            entities.append(tuple(tokens))
             line = f.readline()
 
     return (tiles, entities)
@@ -40,8 +40,7 @@ def create_box_collider_ents(tiles):
     x, y = (0, 0)
 
     def add_box(x, y, w, h):
-        print("Adding box", x, y, w, h)
-        entities.append((ENT_TO_TYPE["bc"], x * 2 + (w / 2) * 2, 0, y * 2 + (h / 2) * 2, (-w / 2) * 2, -1, (-h / 2) * 2, (w / 2) * 2, 1, (h / 2) * 2))
+        entities.append(("bc", x * 2 + (w / 2) * 2, 0, y * 2 + (h / 2) * 2, (-w / 2) * 2, -1, (-h / 2) * 2, (w / 2) * 2, 1, (h / 2) * 2))
         for ty in range(y, y + h):
             for tx in range(x, x + w):
                 solid[ty][tx] = True
@@ -112,7 +111,16 @@ def create_planes(tiles, scale = 2):
     print("Total number of planes:", len(planes))
     return planes
 
-def save(planes, entities, filename):
+def save(tiles, entities, filename):
+    with open(filename, "w") as f:
+        f.write("{} {}\n".format(len(tiles[0]), len(tiles)))
+        for row in tiles:
+            f.write(" ".join(map(str, row)) + "\n")
+
+        for entity in entities:
+            f.write(" ".join(map(str, entity)) + "\n") 
+
+def save_target(planes, entities, filename):
     with open(filename, "w") as f:
         f.write("{}\n".format(len(planes)))
         for plane in planes:
@@ -121,29 +129,31 @@ def save(planes, entities, filename):
         counts = {t: 0 for t in ENT_TO_TYPE.values()}
         
         for ent in entities:
-            counts[ent[0]] += 1
+            counts[ENT_TO_TYPE[ent[0]]] += 1
 
         # write entity counts in the expected order (player door enemy ...)
-        sorted_types = sorted(ENT_TO_TYPE.values())
-        for ent_type in sorted_types:
+        for ent_type in sorted(ENT_TO_TYPE.values()):
             f.write(str(counts[ent_type]) + " ")
         f.write("\n") 
+        
+        # convert entities from names to values
+        target_entities = [[ENT_TO_TYPE[e[0]]] + list(e[1:]) for e in entities]
 
         # write sorted entities
-        sorted_entities = sorted(entities)
+        sorted_entities = sorted(target_entities, key=lambda e: e[0])
         for ent in sorted_entities:
             # no need to write entity type since that's implied by the order
             f.write(" ".join(map(str, ent[1:])) + "\n")
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: python tiles_to_edges.py path/to/tile/file path/to/map/file")
+        print("Usage: python convert_map.py path/to/tile/file path/to/map/file")
         sys.exit(0)
 
-    tiles, ents = read_tiles_and_ents(sys.argv[1])
+    tiles, ents = read(sys.argv[1])
     planes = create_planes(tiles)
     ents += create_box_collider_ents(tiles)
-    save(planes, ents, sys.argv[2])
+    save_target(planes, ents, sys.argv[2])
 
 if __name__ == "__main__":
     main()
