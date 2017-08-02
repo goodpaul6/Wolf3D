@@ -24,3 +24,12 @@ bool WasKeyPressed(SDL_Scancode scancode)
     return PrevKeyState[(int)scancode] == 0 && KeyState[(int)scancode] > 0;
 }
 
+void GetMouseMotion(int* x, int* y)
+{
+    SDL_GetRelativeMouseState(x, y);
+}
+
+bool IsShootButtonDown() 
+{
+    return SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON(SDL_BUTTON_LEFT);
+}

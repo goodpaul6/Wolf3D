@@ -9,9 +9,14 @@
 #include "input.hpp"
 #include "utils.hpp"
 
+static const int VIEW_WIDTH = 640;
+static const int VIEW_HEIGHT = 480;
+
 static const int GAME_MAX_HIT_CHECK_ENTS = 20;
 static const int MAX_SHOT_LEVEL_INTERSECTIONS = 20;
 static const float PLAYER_DOOR_OPEN_DIST = 2.5f;
+static const float PLAYER_LOOK_SPEED = 0.3f;
+static const float PLAYER_HEAD_HEIGHT = 0.15f;
 static const float DOOR_OPEN_SPEED = 1.5f;
 static const float DOOR_OPEN_AMOUNT = 1.75f;
 static const float ENEMY_HIT_TIME = 0.15f;
@@ -449,14 +454,6 @@ static void MoveBy(Entity& e, float x, float y, float z, int typeMask, const Gam
 
 static void Update(Player& player, Game& game, float dt)
 {
-    if(!IsKeyDown(SDL_SCANCODE_LSHIFT))
-    {	
-        if(IsKeyDown(SDL_SCANCODE_A))
-            player.lookAngle += 2.5f * dt;
-        else if(IsKeyDown(SDL_SCANCODE_D))
-            player.lookAngle -= 2.5f * dt;
-    }
-
     if(player.shoot)
     {
         if(player.animTimer < 0.2f) 
@@ -480,51 +477,51 @@ static void Update(Player& player, Game& game, float dt)
         }
     }
     
-    if(IsKeyDown(SDL_SCANCODE_SPACE) && !player.shoot)
+    if(IsShootButtonDown() && !player.shoot)
         player.shoot = true; 
+
+    int lookX, lookY;
+
+    GetMouseMotion(&lookX, &lookY);
+
+    player.lookAngle -= lookX * PLAYER_LOOK_SPEED * dt;
+    player.pitch -= lookY * PLAYER_LOOK_SPEED * dt;
+
+    player.pitch = glm::clamp(player.pitch, (float)M_PI / -8.0f, (float)M_PI / 8.0f);
 
     bool move = false;
     float moveAngle = 0;
 
-    if(IsKeyDown(SDL_SCANCODE_LSHIFT))
+    if(IsKeyDown(SDL_SCANCODE_A))
     {
-        if(IsKeyDown(SDL_SCANCODE_A))
-        {
-            moveAngle = player.lookAngle + (float)M_PI / 2.0f;
-            move = true;
-        }
-        else if(IsKeyDown(SDL_SCANCODE_D))
-        {
-            moveAngle = player.lookAngle - (float)M_PI / 2.0f;
-            move = true;
-        }
+        moveAngle = player.lookAngle + (float)M_PI / 2.0f;
+        move = true;
+    }
+
+    if(IsKeyDown(SDL_SCANCODE_D))
+    {
+        moveAngle = player.lookAngle - (float)M_PI / 2.0f;
+        move = true;
     }
 
     if(IsKeyDown(SDL_SCANCODE_W))
     {
         moveAngle = player.lookAngle;
-
-        if(IsKeyDown(SDL_SCANCODE_LSHIFT))
-        {
-            if(IsKeyDown(SDL_SCANCODE_A))
-                moveAngle += (float)M_PI / 4.0f;
-            else if(IsKeyDown(SDL_SCANCODE_D))
-                moveAngle -= (float)M_PI / 4.0f;
-        }
+        if(IsKeyDown(SDL_SCANCODE_A))
+            moveAngle += (float)M_PI / 4.0f;
+        else if(IsKeyDown(SDL_SCANCODE_D))
+            moveAngle -= (float)M_PI / 4.0f;
 
         move = true;
     }
-    else if(IsKeyDown(SDL_SCANCODE_S))
+
+    if(IsKeyDown(SDL_SCANCODE_S))
     {
         moveAngle = player.lookAngle + (float)M_PI;
-
-        if(IsKeyDown(SDL_SCANCODE_LSHIFT))
-        {
-            if(IsKeyDown(SDL_SCANCODE_A))
-                moveAngle -= (float)M_PI / 4.0f;
-            else if(IsKeyDown(SDL_SCANCODE_D))
-                moveAngle += (float)M_PI / 4.0f;
-        }
+        if(IsKeyDown(SDL_SCANCODE_A))
+            moveAngle -= (float)M_PI / 4.0f;
+        else if(IsKeyDown(SDL_SCANCODE_D))
+            moveAngle += (float)M_PI / 4.0f;
 
         move = true;
     }
@@ -750,11 +747,14 @@ static void Update(Painting& painting, float dt)
 
 void Init(Game& game)
 {
+    SDL_SetRelativeMouseMode(SDL_TRUE);
+
     game.debugDraw = false;
 
     game.level = LoadLevel("levels/test.map");
 
     game.basicShader = LoadShader("shaders/basic.vert", "shaders/basic.frag");
+    game.spriteShader = LoadShader("shaders/sprite.vert", "shaders/sprite.frag");
 
     game.levelTexture = LoadTexture("textures/wolf.png");
     
@@ -780,6 +780,8 @@ void Init(Game& game)
     game.boxMesh = LoadMesh("models/box.obj");
     game.planeMesh = CreatePlaneMesh();
     game.levelMesh = CreateLevelMesh(game.level, game.levelTexture);
+
+    game.quad = CreateQuad();
 
     game.player.hasbb = true;
     game.player.min = glm::vec3(-0.5f, -1, -0.5f);
@@ -934,8 +936,13 @@ void Draw(const Game& game, const glm::mat4& proj)
     // Setup view proj
     glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
 
-    glm::mat4 view = glm::lookAt(glm::vec3(game.player.x, game.player.y, game.player.z), 
-                                 glm::vec3(game.player.x + sinf(game.player.lookAngle), game.player.y, game.player.z + cosf(game.player.lookAngle)), 
+    float pitch = game.player.pitch;
+    float yaw = game.player.lookAngle;
+
+    glm::vec3 forward = glm::vec3(cosf(pitch) * sinf(yaw), sinf(pitch), cosf(pitch) * cosf(yaw));
+
+    glm::mat4 view = glm::lookAt(glm::vec3(game.player.x, game.player.y + PLAYER_HEAD_HEIGHT, game.player.z), 
+                                 glm::vec3(game.player.x, game.player.y + PLAYER_HEAD_HEIGHT, game.player.z) + forward, 
                                  glm::vec3(0, 1, 0));
 
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
@@ -1087,7 +1094,21 @@ void Draw(const Game& game, const glm::mat4& proj)
         glEnable(GL_DEPTH_TEST);
     }
 
-    // Draw player gun
+    // Setup sprite shader
+
+    glUseProgram(game.spriteShader.id);
+ 
+    GLuint spriteTexLoc = glGetUniformLocation(game.spriteShader.id, "tex");
+	GLuint viewSizeLoc = glGetUniformLocation(game.spriteShader.id, "viewSize");
+
+    // Set the view size
+
+    glUniform1i(spriteTexLoc, 0);
+    glUniform2f(viewSizeLoc, (float)VIEW_WIDTH, (float)VIEW_HEIGHT);
+
+    // Draw player gun (a sprite)
+
+#if 0
     float x = 0, y = 0, z = 0;
     Forward(game.player.lookAngle, x, z, 1.2f);
 
@@ -1104,8 +1125,11 @@ void Draw(const Game& game, const glm::mat4& proj)
         z += rz * t * 0.02f;
         y = sinf(game.player.stride) * 0.01f - 0.01f;
     }
+        
+    model = glm::translate(glm::vec3(game.player.x + forward.x, game.player.y + forward.y, game.player.z + forward.z)) * glm::scale(glm::vec3(0.5f, 0.5f, 0.5f)) *  
+        glm::rotate(game.player.lookAngle, glm::vec3(0.0f, 1.0f, 0.0f)) *
+        glm::rotate(game.player.pitch, glm::vec3(1.0f, 0.0f, 0.0f));
 
-    model = glm::translate(glm::vec3(game.player.x + x, game.player.y + y, game.player.z + z)) * glm::scale(glm::vec3(0.5f, 0.5f, 0.5f)) * glm::rotate(game.player.lookAngle, glm::vec3(0.0f, 1.0f, 0.0f));
     glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
     glBindTexture(GL_TEXTURE_2D, game.gunTexture.id);
@@ -1114,6 +1138,32 @@ void Draw(const Game& game, const glm::mat4& proj)
 
     glDisable(GL_DEPTH_TEST); 
     Draw(game.gunMesh);
+    glEnable(GL_DEPTH_TEST);
+#endif
+
+    float t = sinf(game.player.stride / 2.0f);
+    
+#if 0
+    float ox = t * 20.0f;
+    float oy = t * 10.0f;
+#endif
+
+    float ox = 0;
+    float oy = 0;
+
+#if 0
+    Update(game.quad, game.gunTexture, 
+           VIEW_WIDTH / 2.0f - 32.0f + ox, VIEW_HEIGHT / 2.0f - 32.0f + oy, 128, 128,
+           64, 64, game.player.frame); 
+#endif
+
+    Update(game.quad, game.gunTexture, VIEW_WIDTH / 2.0f - 256, VIEW_HEIGHT - 512, 512, 512, 64, 64, game.player.frame);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, game.gunTexture.id);
+
+    glDisable(GL_DEPTH_TEST);
+    Draw(game.quad);
     glEnable(GL_DEPTH_TEST);
 }
 

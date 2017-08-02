@@ -27,3 +27,13 @@ Whenever I attempted to write a 3D game in the past, I would get bogged down by 
 * Simple enemy AI (idle, walking around, looking for player, shooting)
 * Enemies are completely animated (and their sprites face the correct directions)
 * Unified collision system
+
+## Week 3 + Monday
+![Alt text](screens/week3monday.png?raw=true "Week 3 + Monday")
+### Notes
+* Finished Linear Algebra 1
+### Features
+* Created level editor in python and tkinter
+* Mouse look with 2 degrees of freedom
+
+

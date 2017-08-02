@@ -93,8 +93,17 @@ Mesh CreateLevelMesh(const Level& level, const Texture& texture)
     {
         const Level::Plane& plane = level.planes[i];
 
-        int oa[3] = { plane.a[0] - plane.o[0], plane.a[1] - plane.o[1], plane.a[2] - plane.o[2] };
-        int c[3] = { plane.b[0] + oa[0], plane.b[1] + oa[1], plane.b[2] + oa[2] };
+        int a[3] = { plane.o[0] + plane.a[0],
+                     plane.o[1] + plane.a[1],
+                     plane.o[2] + plane.a[2] };
+
+        int b[3] = { plane.o[0] + plane.b[0],
+                     plane.o[1] + plane.b[1],
+                     plane.o[2] + plane.b[2] };
+
+        int c[3] = { plane.o[0] + plane.a[0] + plane.b[0],
+                     plane.o[1] + plane.a[1] + plane.b[1],
+                     plane.o[2] + plane.a[2] + plane.b[2] };
 
         const float size = LEVEL_SCALE_FACTOR / 2.0f;
     
@@ -102,17 +111,17 @@ Mesh CreateLevelMesh(const Level& level, const Texture& texture)
         float y1 = plane.o[1] * size;
         float z1 = plane.o[2] * size;
 
-        float x2 = plane.a[0] * size;
-        float y2 = plane.a[1] * size;
-        float z2 = plane.a[2] * size;
+        float x2 = a[0] * size;
+        float y2 = a[1] * size;
+        float z2 = a[2] * size;
         
         float x3 = c[0] * size;
         float y3 = c[1] * size;
         float z3 = c[2] * size;
         
-        float x4 = plane.b[0] * size;
-        float y4 = plane.b[1] * size;
-        float z4 = plane.b[2] * size;
+        float x4 = b[0] * size;
+        float y4 = b[1] * size;
+        float z4 = b[2] * size;
 
         float u1, v1, u2, v2;
         GetTileUV(texture, plane.tile, u1, v1, u2, v2);
@@ -188,7 +197,65 @@ void DestroyMesh(Mesh& mesh)
 void Draw(const Mesh& mesh)
 {
     glBindVertexArray(mesh.vertexArray);
-
     glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_SHORT, (void*)0);
 }
 
+Quad CreateQuad()
+{
+    Quad quad;
+
+    glGenVertexArrays(1, &quad.vertexArray);
+    glGenBuffers(1, &quad.vbo);
+
+    glBindVertexArray(quad.vertexArray);
+
+    glBindBuffer(GL_ARRAY_BUFFER, quad.vbo);
+
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, (void*)0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 4, (void*)(sizeof(float) * 2));
+
+	return quad;
+}
+
+void Update(Quad& quad, const Texture& texture, float x, float y, float w, float h, int fw, int fh, int frame)
+{
+    int columns = texture.width / fw;
+	
+    float u1 = ((frame % columns) * fw) / (float)texture.width;
+    float v1 = ((frame / columns) * fh) / (float)texture.height;
+    float u2 = u1 + (fw / (float)texture.width);
+    float v2 = v1 + (fh / (float)texture.height);
+
+    const float data[] =
+    {
+        x, y,
+        u1, v1,
+
+        x + w, y,
+        u2, v1,
+
+        x + w, y + h,
+        u2, v2,
+
+        x + w, y + h,
+        u2, v2,
+
+        x, y + h,
+        u1, v2,
+
+        x, y,
+        u1, v1
+    };
+
+    glBindBuffer(GL_ARRAY_BUFFER, quad.vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_DYNAMIC_DRAW);
+}
+
+void Draw(const Quad& quad)
+{
+    glBindVertexArray(quad.vertexArray);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+}

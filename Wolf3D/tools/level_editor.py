@@ -56,8 +56,10 @@ class Map(tk.Canvas):
             for x, item in enumerate(row):
                 if item:
                     self.delete(item)
+        
+        self.delete(self.bounds_id) 
 
-        self.tiles = tiles
+        self.tiles = [[tile for tile in row] for row in tiles]
         self.tile_ids = [[None for _ in row] for row in tiles]
 
         self.width_in_tiles = len(tiles[0])
@@ -67,8 +69,9 @@ class Map(tk.Canvas):
             for x, tile in enumerate(row):
                 if tile != CLEAR_TILE:
                     self.tile_ids[y][x] = self.create_rectangle((x * 32, y * 32, (x + 1) * 32, (y + 1) * 32), fill=TILE_COLORS[tile])
+
+        self.bounds_id = self.create_rectangle((0, 0, self.width_in_tiles * 32, self.height_in_tiles * 32), outline="white")
         
-        self.tag_raise(self.bounds_id)
         self.tag_raise(self.brush_id)
 
     def get_tile_at(self, tx, ty):
@@ -408,7 +411,7 @@ def main():
     root = tk.Tk()
     root.bind("<Escape>", lambda e: root.quit())
 
-    center_window(root, 640, 480)
+    center_window(root, 800, 600)
 
     app = Main()
     root.mainloop()

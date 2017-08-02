@@ -89,22 +89,22 @@ def create_planes(tiles, scale = 2):
             yy = y * scale
             # -1 tiles are empty
             if tile == 0:
-                planes.append((xx, 0, yy + scale, xx, 0, yy, xx + scale, 0, yy + scale, tile))
+                planes.append((xx, 0, yy + scale, 0, 0, -scale, scale, 0, 0, tile))
             elif tile > 0:
                 # make walls wherever they are visible
                 
                 # low-x wall
                 if x - 1 >= 0 and row[x - 1] == 0:
-                    planes.append((xx, 0, yy, xx, scale, yy, xx, 0, yy + scale, tile))
+                    planes.append((xx, 0, yy, 0, scale, 0, 0, 0, scale, tile))
                 # low-z wall
                 if y - 1 >= 0 and tiles[y - 1][x] == 0:
-                    planes.append((xx, 0, yy, xx, scale, yy, xx + scale, 0, yy, tile))
+                    planes.append((xx, 0, yy, 0, scale, 0, scale, 0, 0, tile))
                 # high-x wall
                 if x + 1 < len(row) and row[x + 1] == 0:
-                    planes.append((xx + scale, 0, yy, xx + scale, scale, yy, xx + scale, 0, yy + scale, tile)) 
+                    planes.append((xx + scale, 0, yy, 0, scale, 0, 0, 0, scale, tile)) 
                 # high-z wall
                 if y + 1 < len(tiles) and tiles[y + 1][x] == 0:
-                    planes.append((xx + scale, 0, yy + scale, xx + scale, scale, yy + scale, xx, 0, yy + scale, tile))
+                    planes.append((xx + scale, 0, yy + scale, 0, scale, 0, -scale, 0, 0, tile))
             x += 1
         y += 1 
     

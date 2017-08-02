@@ -18,6 +18,7 @@ struct Entity
 
 struct Player : public Entity
 {
+    float pitch = 0;             // radians
     float lookAngle = 0;         // radians
     float stride = 0;
 
@@ -112,6 +113,8 @@ struct Game
     mutable Mesh boxMesh;
     mutable Mesh planeMesh;
 
+    mutable Quad quad;
+
     Texture levelTexture;
     Texture doorTexture;
     Texture gunTexture;
@@ -123,6 +126,7 @@ struct Game
     Texture tracerTexture;
 
     Shader basicShader;
+    Shader spriteShader;
 };
 
 void Init(Game& game);

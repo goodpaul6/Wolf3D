@@ -14,15 +14,23 @@ struct Vertex
     float u, v;
 };
 
+// For rendering 3D meshes
 struct Mesh
 {
-    int vertexCount, indexCount;
+    int vertexCount = 0, indexCount = 0;
 
-    Vertex* vertices;
-    ushort* indices;
+    Vertex* vertices = nullptr;
+    ushort* indices = nullptr;
 
-    GLuint vertexArray;
+    GLuint vertexArray = 0;
     GLuint buffers[2];
+};
+
+// For rendering 2D sprites
+struct Quad
+{ 
+    GLuint vertexArray = 0;
+    GLuint vbo = 0;
 };
 
 void GetTileUV(const Texture& texture, int tile, float& u1, float& v1, float& u2, float& v2);
@@ -37,4 +45,11 @@ void PlaneShowFrame(Mesh& mesh, const Texture& texture, int fw, int fh, int fram
 void DestroyMesh(Mesh& mesh);
 
 void Draw(const Mesh& mesh);
+
+Quad CreateQuad();
+
+// Each call to this updates the vertex buffer of the quad
+void Update(Quad& quad, const Texture& texture, float x, float y, float w, float h, int fw, int fh, int frame);
+
+void Draw(const Quad& quad);
 
