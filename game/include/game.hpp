@@ -2,8 +2,8 @@
 
 #include <stdint.h>
 
-#include "graphics.hpp"
 #include "resources.hpp"
+#include "graphics.hpp"
 
 static const int GAME_MAX_BULLET_IMPACTS = 64;
 static const int GAME_MAX_TRACERS = 32;

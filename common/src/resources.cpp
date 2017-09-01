@@ -1,12 +1,14 @@
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
 #include <assert.h>
+#include <stb_image.h>
 
 #include "resources.hpp"
 #include "graphics.hpp"
 #include "utils.hpp"
 
-static GLuint CreateTexture(GLuint format, const unsigned char* data, int w, int h)
+static unsigned char FontDataBuffer[1 << 20];
+static unsigned char TempFontImage[512 * 512];
+
+static GLuint CreateTexture(GLuint internalFormat, GLuint format, const unsigned char* data, int w, int h)
 {
 	GLuint texture = 0;
 
@@ -17,7 +19,7 @@ static GLuint CreateTexture(GLuint format, const unsigned char* data, int w, int
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-	glTexImage2D(GL_TEXTURE_2D, 0, format, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, w, h, 0, format, GL_UNSIGNED_BYTE, data);
 
 	return texture;
 }
@@ -30,7 +32,7 @@ Texture LoadTexture(const char* filename)
 	if (!data)
 	    CRASH("Failed to load texture '%s'\n", filename);
 
-	GLuint id = CreateTexture(GL_RGBA, data, width, height);
+	GLuint id = CreateTexture(GL_RGBA, GL_RGBA, data, width, height);
 
 	stbi_image_free(data);
 
@@ -217,8 +219,36 @@ Mesh LoadMesh(const char* filename)
         }
     }
 
+    fclose(file);
+
     // TODO: Change vertexCount to indexCount once that's changed
     return CreateMesh(vertexCount, vertices, vertexCount, indices);
+}
+
+Font LoadFont(const char* filename, float height)
+{
+    FILE* file = fopen(filename, "rb");
+
+    if(!file)
+        CRASH("Failed to open bitmap font file '%s'\n", filename);
+
+    fread(FontDataBuffer, 1, 1 << 20, file);
+    fclose(file);
+
+    Font font;
+
+    stbtt_InitFont(&font.info, FontDataBuffer, stbtt_GetFontOffsetForIndex(FontDataBuffer, 0));
+
+    font.height = height;
+    
+    // TODO: Attempt to do more than ascii?
+    stbtt_BakeFontBitmap(FontDataBuffer, 0, height, TempFontImage, FONT_BITMAP_WIDTH, FONT_BITMAP_HEIGHT, 32, 96, font.glyphs);
+
+    font.texture.id = CreateTexture(GL_RED, GL_RED, TempFontImage, FONT_BITMAP_WIDTH, FONT_BITMAP_HEIGHT);
+	font.texture.width = FONT_BITMAP_WIDTH;
+	font.texture.height = FONT_BITMAP_HEIGHT;
+
+    return font;
 }
 
 Level LoadLevel(const char* filename)
@@ -255,7 +285,7 @@ Level LoadLevel(const char* filename)
             EntityInfo& info = level.entities[i][j];
 
             info.type = (EntityType)i;
-
+				
             // Always present
             fscanf(file, "%f %f %f", &info.x, &info.y, &info.z);
 
@@ -282,7 +312,14 @@ Level LoadLevel(const char* filename)
         }
     }
 
+    fclose(file);
+
     return level;
+}
+
+void DestroyFont(Font& font)
+{
+    // TODO: Destroy Texture
 }
 
 void DestroyLevel(Level& level)

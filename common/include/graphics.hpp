@@ -1,6 +1,7 @@
 #pragma once
 
-#include <GL/gl3w.h>
+#include <gl3w.h>
+#include <glm/glm.hpp>
 #include <SDL.h>
 
 #include "types.hpp"
@@ -33,6 +34,30 @@ struct Quad
     GLuint vbo = 0;
 };
 
+// For doing shape rendering
+struct ShapeRenderer
+{
+    GLuint vertexArray = 0;
+    GLuint vbo = 0;
+
+    const Shader* shader = nullptr;
+};
+
+// For doing sprite rendering
+struct SpriteRenderer
+{
+    struct Vertex
+    {
+        float x, y;
+        float u, v;
+    };
+
+    GLuint vertexArray = 0;
+    GLuint vbo = 0;
+
+    const Shader* shader = nullptr;
+};
+
 void GetTileUV(const Texture& texture, int tile, float& u1, float& v1, float& u2, float& v2);
 
 Mesh CreateMesh(int vertexCount, const Vertex* vertices, int indexCount, const ushort* indices);
@@ -51,5 +76,9 @@ Quad CreateQuad();
 // Each call to this updates the vertex buffer of the quad
 void Update(Quad& quad, const Texture& texture, float x, float y, float w, float h, int fw, int fh, int frame);
 
+// TODO: Perhaps remove the texture argument from this (since it isn't used)
+void Update(Quad& quad, const Texture& texture, float x, float y, float w, float h);
+
 void Draw(const Quad& quad);
 
+void DestroyQuad(Quad& quad);

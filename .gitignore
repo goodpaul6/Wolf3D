@@ -13,3 +13,4 @@ Release/
 *.trace 
 *.vcxproj* 
 *.sln 
+build* 

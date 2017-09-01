@@ -1,9 +1,9 @@
-#include <GL/gl3w.h>
+#include <gl3w.h>
 #include <stdlib.h>
 
 #include "utils.hpp"
-#include "graphics.hpp"
 #include "resources.hpp"
+#include "graphics.hpp"
 
 static const ushort PLANE_INDICES[] =
 {
@@ -254,8 +254,21 @@ void Update(Quad& quad, const Texture& texture, float x, float y, float w, float
     glBufferData(GL_ARRAY_BUFFER, sizeof(data), data, GL_DYNAMIC_DRAW);
 }
 
+void Update(Quad& quad, const Texture& texture, float x, float y, float w, float h)
+{
+    // TODO: Do this properly (i.e. make a data array for this) to 
+    // make sure floating point rounding to int doesn't fuck shit up
+    Update(quad, texture, x, y, w, h, (int)w, (int)h, 0);
+}
+
 void Draw(const Quad& quad)
 {
     glBindVertexArray(quad.vertexArray);
     glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+void DestroyQuad(Quad& quad)
+{
+    glDeleteVertexArrays(1, &quad.vertexArray);
+    glDeleteBuffers(1, &quad.vbo);
 }

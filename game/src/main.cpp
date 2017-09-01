@@ -1,4 +1,4 @@
-#include <GL/gl3w.h>
+#include <gl3w.h>
 #include <SDL.h>
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
@@ -7,38 +7,14 @@
 #include "utils.hpp"
 #include "game.hpp"
 #include "input.hpp"
+#include "context.hpp"
 
 static const int WINDOW_WIDTH = 640;
 static const int WINDOW_HEIGHT = 480;
 
 int main(int argc, char** argv)
 {
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0)
-		CRASH("Failed to initialize SDL2: %s\n", SDL_GetError());
-
-	atexit(SDL_Quit);
-
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-
-	SDL_Window* window = SDL_CreateWindow("Wolf 3D",
-		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-		WINDOW_WIDTH, WINDOW_HEIGHT,
-		SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
-
-	if (!window)
-		CRASH("Failed to create SDL_Window: %s\n", SDL_GetError());
-
-	SDL_GLContext context = SDL_GL_CreateContext(window);
-
-	if (!context)
-		CRASH("Failed to create SDL_GLContext: %s\n", SDL_GetError());
-
-	if (gl3wInit())
-		CRASH("Failed to initialize gl3w\n");
-
-    SDL_GL_SetSwapInterval(-1);
+    Context context = CreateContext("Wolf3D", WINDOW_WIDTH, WINDOW_HEIGHT, CONTEXT_SCALE_STRETCH);
 
 	SDL_Event event;
 	bool running = true;
@@ -56,8 +32,6 @@ int main(int argc, char** argv)
     
     glClearColor(0, 0, 0, 1.0f);
 	
-	glm::mat4 proj = glm::perspective(glm::radians(45.0f), WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.2f, 100.0f);
-
     while(running)
     {
         while(SDL_PollEvent(&event))
@@ -82,13 +56,14 @@ int main(int argc, char** argv)
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), context.viewWidth / context.viewHeight, 0.2f, 100.0f);
+
         Draw(game, proj);
 
-        SDL_GL_SwapWindow(window);
+        SDL_GL_SwapWindow(context.window);
     }
 
-    SDL_GL_DeleteContext(context);
-    SDL_DestroyWindow(window);
+    DestroyContext(context);
 
     return 0;
 }
